@@ -1,0 +1,160 @@
+.popup-container, .result-container {
+  width: 300px;
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.popup-container h2, .result-container h2 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+  text-align: center;
+}
+
+button {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0;
+  font-size: 14px;
+  border: none;
+  border-radius: 6px;
+  background: #4CAF50;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+button:hover:not(:disabled) {
+  background: #45a049;
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+  transform: none;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button.loading {
+  background: #2196F3;
+  position: relative;
+}
+
+button.loading:after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  100% { transform: translateY(-50%) rotate(360deg); }
+}
+
+input[type="number"], input[type="checkbox"] {
+  padding: 8px;
+  margin: 8px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+input[type="number"] {
+  width: calc(100% - 18px);
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  margin-right: 0;
+  vertical-align: middle;
+}
+
+label {
+  display: inline-block;
+  margin: 8px 0;
+  color: #666;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+#screenshotPreview {
+  width: 100%;
+  height: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin: 10px 0;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.corner-radius-container {
+  margin: 15px 0;
+}
+
+.corner-radius-container label {
+  margin-bottom: 5px;
+  display: block;
+}
+
+.success-message {
+  background: #d4edda;
+  color: #155724;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+.error-message {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+.warning-message {
+  background: #fff3cd;
+  color: #856404;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+.info-message {
+  background: #d1ecf1;
+  color: #0c5460;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  text-align: center;
+  font-size: 12px;
+}

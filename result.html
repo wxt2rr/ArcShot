@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="result-container">
+    <h2>截图结果</h2>
+    <img id="screenshotPreview" src="" alt="Screenshot Preview">
+    <div class="corner-radius-container">
+      <label for="cornerRadius">圆角半径 (像素):</label>
+      <input type="number" id="cornerRadius" min="0" max="50" value="0" placeholder="输入0-50之间的数值">
+    </div>
+    <button id="saveBtn">保存并下载</button>
+    <div class="info-message">
+      调整圆角数值可以实时预览效果，点击保存下载图片
+    </div>
+  </div>
+  <script src="utils/imageUtils.js"></script>
+  <script src="result.js"></script>
+</body>
+</html>
