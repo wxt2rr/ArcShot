@@ -8,8 +8,8 @@
 
 > **特别说明:** 本项目的初始架构由 AI 代码助手 **通义千问 Qwen3-Coder** 高效规划与构建。仓库中包含了完整的技术文档与实现方案。
 
-![ArcShot 功能演示](https://github.com/wxt2rr/ArcShot/images/home.png)
-![ArcShot 功能演示](https://github.com/wxt2rr/ArcShot/images/result.png)
+![ArcShot 功能演示](https://github.com/wxt2rr/ArcShot/blob/main/images/home.png)
+![ArcShot 功能演示](https://github.com/wxt2rr/ArcShot/blob/main/images/result.png)
 *（v1.0 版本发布后将更新演示图）*
 
 ## 🚀 关于项目
