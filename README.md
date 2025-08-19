@@ -98,9 +98,3 @@ ArcShot 是一个持续演进的项目，未来计划增加以下功能：
 ## 📄 开源许可
 
 本项目基于 MIT 许可协议。详情请参阅 `LICENSE` 文件。
-
-## 📧 联系方式
-
-你的名字 - [@你的社交账号](https://twitter.com/yourtwitter) - email@example.com
-
-项目链接: [https://github.com/your-username/arcshot](https://github.com/your-username/arcshot)
