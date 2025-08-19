@@ -9,6 +9,7 @@ let instructionText = null;
 let isSelecting = false;
 let startX = 0, startY = 0;
 let currentSelection = null;
+let isScrollingMode = false; // 新增：标记是否为滚动模式
 
 // 创建选择区域的覆盖层
 function createSelectionOverlay() {
@@ -91,43 +92,79 @@ function startSelection(e) {
   if (e.target !== selectionOverlay) return;
   
   isSelecting = true;
-  startX = e.clientX;
-  startY = e.clientY;
   
-  selectionBox.style.left = startX + 'px';
-  selectionBox.style.top = startY + 'px';
+  // 根据模式选择坐标系
+  if (isScrollingMode) {
+    // 滚动模式：需要文档坐标（视口坐标 + 滚动偏移）
+    startX = e.clientX + window.pageXOffset;
+    startY = e.clientY + window.pageYOffset;
+    console.log('滚动模式 - 文档坐标选择开始:', startX, startY);
+    console.log('当前滚动偏移:', window.pageXOffset, window.pageYOffset);
+  } else {
+    // 普通模式：使用视口坐标
+    startX = e.clientX;
+    startY = e.clientY;
+    console.log('普通模式 - 视口坐标选择开始:', startX, startY);
+  }
+  
+  // 选择框始终使用视口坐标显示
+  selectionBox.style.left = e.clientX + 'px';
+  selectionBox.style.top = e.clientY + 'px';
   selectionBox.style.width = '0px';
   selectionBox.style.height = '0px';
   selectionBox.style.display = 'block';
   
   // 更新指示文字
   if (instructionText) {
-    instructionText.textContent = '拖拽到目标区域，松开鼠标完成选择';
+    if (isScrollingMode) {
+      instructionText.textContent = '拖拽选择滚动截图区域，松开鼠标完成';
+    } else {
+      instructionText.textContent = '拖拽到目标区域，松开鼠标完成选择';
+    }
   }
-  
-  console.log('Selection started at:', startX, startY);
 }
 
 // 更新选择框
 function updateSelection(e) {
   if (!isSelecting) return;
   
-  const currentX = e.clientX;
-  const currentY = e.clientY;
+  // 获取当前坐标（根据模式选择坐标系）
+  let currentX, currentY;
+  if (isScrollingMode) {
+    // 滚动模式：使用文档坐标
+    currentX = e.clientX + window.pageXOffset;
+    currentY = e.clientY + window.pageYOffset;
+  } else {
+    // 普通模式：使用视口坐标
+    currentX = e.clientX;
+    currentY = e.clientY;
+  }
   
+  // 计算选择区域（使用对应的坐标系）
   const width = Math.abs(currentX - startX);
   const height = Math.abs(currentY - startY);
   const left = Math.min(startX, currentX);
   const top = Math.min(startY, currentY);
   
-  selectionBox.style.left = left + 'px';
-  selectionBox.style.top = top + 'px';
-  selectionBox.style.width = width + 'px';
-  selectionBox.style.height = height + 'px';
+  // 选择框显示始终使用视口坐标
+  const displayLeft = Math.min(e.clientX, isScrollingMode ? 
+    (startX - window.pageXOffset) : startX);
+  const displayTop = Math.min(e.clientY, isScrollingMode ? 
+    (startY - window.pageYOffset) : startY);
+  const displayWidth = Math.abs(e.clientX - (isScrollingMode ? 
+    (startX - window.pageXOffset) : startX));
+  const displayHeight = Math.abs(e.clientY - (isScrollingMode ? 
+    (startY - window.pageYOffset) : startY));
+  
+  selectionBox.style.left = displayLeft + 'px';
+  selectionBox.style.top = displayTop + 'px';
+  selectionBox.style.width = displayWidth + 'px';
+  selectionBox.style.height = displayHeight + 'px';
   
   // 更新指示文字显示当前选择区域大小
   if (instructionText && width > 0 && height > 0) {
-    instructionText.textContent = `选择区域: ${width} × ${height} 像素，松开鼠标完成`;
+    const modeText = isScrollingMode ? '文档' : '视口';
+    instructionText.textContent = `${modeText}选择区域: ${Math.round(width)} × ${Math.round(height)} 像素，松开鼠标完成`;
   }
 }
 
@@ -137,8 +174,19 @@ function endSelection(e) {
   
   isSelecting = false;
   
-  const currentX = e.clientX;
-  const currentY = e.clientY;
+  // 获取当前坐标（根据模式选择坐标系）
+  let currentX, currentY;
+  if (isScrollingMode) {
+    // 滚动模式：使用文档坐标
+    currentX = e.clientX + window.pageXOffset;
+    currentY = e.clientY + window.pageYOffset;
+    console.log('滚动模式 - 文档坐标选择结束:', currentX, currentY);
+  } else {
+    // 普通模式：使用视口坐标
+    currentX = e.clientX;
+    currentY = e.clientY;
+    console.log('普通模式 - 视口坐标选择结束:', currentX, currentY);
+  }
   
   const width = Math.abs(currentX - startX);
   const height = Math.abs(currentY - startY);
@@ -146,6 +194,7 @@ function endSelection(e) {
   const top = Math.min(startY, currentY);
   
   console.log('Selection ended:', { left, top, width, height });
+  console.log('坐标模式:', isScrollingMode ? '文档坐标' : '视口坐标');
   
   // 降低最小选择区域要求
   if (width < 5 || height < 5) {
@@ -168,14 +217,36 @@ function endSelection(e) {
     x: left,
     y: top,
     width: width,
-    height: height
+    height: height,
+    // 新增：标记坐标类型以便后续处理
+    coordinateType: isScrollingMode ? 'document' : 'viewport',
+    scrollOffset: isScrollingMode ? {
+      x: window.pageXOffset,
+      y: window.pageYOffset
+    } : null
   };
+  
+  console.log('=== 📐 坐标系统详细信息 ===');
+  console.log('选择模式:', isScrollingMode ? '滚动模式（文档坐标）' : '普通模式（视口坐标）');
+  console.log('当前页面滚动位置:', `x=${window.pageXOffset}, y=${window.pageYOffset}`);
+  console.log('页面总尺寸:', `scrollWidth=${document.documentElement.scrollWidth || document.body.scrollWidth}, scrollHeight=${document.documentElement.scrollHeight || document.body.scrollHeight}`);
+  console.log('视口尺寸:', `innerWidth=${window.innerWidth}, innerHeight=${window.innerHeight}`);
+  console.log('原始选择坐标:', `startX=${startX}, startY=${startY}, endX=${currentX}, endY=${currentY}`);
+  console.log('最终选择区域:', currentSelection);
+  
+  if (isScrollingMode) {
+    console.log('🔍 滚动模式验证:');
+    console.log('   - 文档坐标转换为视口坐标:');
+    console.log(`   - 左上角: (${left}, ${top}) -> (${left - window.pageXOffset}, ${top - window.pageYOffset})`);
+    console.log(`   - 右下角: (${left + width}, ${top + height}) -> (${left + width - window.pageXOffset}, ${top + height - window.pageYOffset})`);
+  }
   
   console.log('Sending area selection message:', currentSelection);
   
   // 更新指示文字
   if (instructionText) {
-    instructionText.textContent = '正在处理选择区域...';
+    const modeText = isScrollingMode ? '滚动截图' : '普通截图';
+    instructionText.textContent = `正在处理${modeText}选择区域...`;
     instructionText.style.background = 'rgba(40, 167, 69, 0.9)';
   }
   
@@ -189,6 +260,7 @@ function sendMessageWithRetry(retryCount = 0) {
   const message = {
     action: 'areaSelected',
     selection: currentSelection,
+    isScrollingMode: isScrollingMode, // 新增：包含滚动模式信息
     timestamp: Date.now()
   };
   
@@ -314,10 +386,10 @@ function handleKeyPress(e) {
 function scrollToPosition(y) {
   console.log(`尝试滚动到位置: ${y}px, 当前位置: ${window.pageYOffset}px`);
   
-  // 确保滚动位置在有效范围内
+  // 获取更准确的最大滚动距离
   const maxScroll = Math.max(
-    document.body.scrollHeight - window.innerHeight,
-    document.documentElement.scrollHeight - window.innerHeight,
+    (document.body.scrollHeight || 0) - (window.innerHeight || 0),
+    (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0),
     0
   );
   
@@ -327,12 +399,16 @@ function scrollToPosition(y) {
     console.log(`调整滚动位置从 ${y}px 到 ${targetY}px (最大滚动: ${maxScroll}px)`);
   }
   
+  // 记录滚动前的位置
+  const beforeScroll = window.pageYOffset;
+  
   // 使用多种方法确保滚动成功
   try {
-    // 方法1: 使用window.scrollTo
+    // 方法1: 使用window.scrollTo (最常用方法)
     window.scrollTo({
       top: targetY,
-      behavior: 'auto'
+      left: 0,
+      behavior: 'auto' // 使用auto而不是smooth，确保立即滚动
     });
     
     // 方法2: 直接设置scrollTop作为备用
@@ -344,17 +420,41 @@ function scrollToPosition(y) {
       document.body.scrollTop = targetY;
     }
     
-    console.log(`滚动完成，实际位置: ${window.pageYOffset}px`);
+    // 方法3: 使用scrollBy作为额外保障
+    const actualPosition = window.pageYOffset;
+    const diff = targetY - actualPosition;
+    if (Math.abs(diff) > 1) { // 如果误差超过1px，使用scrollBy调整
+      window.scrollBy(0, diff);
+    }
+    
+    const finalPosition = window.pageYOffset;
+    console.log(`滚动执行结果: ${beforeScroll}px -> ${finalPosition}px (目标: ${targetY}px, 误差: ${Math.abs(finalPosition - targetY)}px)`);
+    
+    // 如果滚动没有生效，尝试强制滚动
+    if (Math.abs(finalPosition - targetY) > 5 && targetY <= maxScroll) {
+      console.log('首次滚动效果不佳，尝试强制滚动方法');
+      
+      // 强制滚动方法
+      document.documentElement.scrollTop = targetY;
+      document.body.scrollTop = targetY;
+      
+      // 尝试使用window.scroll()
+      window.scroll(0, targetY);
+      
+      const forceResult = window.pageYOffset;
+      console.log(`强制滚动结果: ${forceResult}px (误差: ${Math.abs(forceResult - targetY)}px)`);
+    }
+    
   } catch (error) {
     console.error('滚动操作失败:', error);
     
-    // 备用方法：直接设置scrollTop
+    // 最后的备用方法：直接设置scrollTop
     try {
       document.documentElement.scrollTop = targetY;
       document.body.scrollTop = targetY;
       console.log(`使用备用方法滚动到: ${window.pageYOffset}px`);
     } catch (backupError) {
-      console.error('备用滚动方法也失败:', backupError);
+      console.error('所有滚动方法都失败:', backupError);
     }
   }
 }
@@ -370,7 +470,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       break;
       
     case 'startAreaSelection':
+      isScrollingMode = false; // 普通区域选择
       createSelectionOverlay();
+      sendResponse({ success: true });
+      break;
+      
+    case 'startScrollingAreaSelection':
+      isScrollingMode = true; // 滚动区域选择
+      createSelectionOverlay();
+      // 更新指示文字以反映滚动模式
+      if (instructionText) {
+        instructionText.textContent = '拖拽选择区域，将进行滚动截图拼接';
+      }
       sendResponse({ success: true });
       break;
       
@@ -382,22 +493,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'getPageInfo':
       // 返回页面信息，用于滚动截图等功能
       const scrollInfo = {
+        // 多种方式获取页面总高度，取最大值确保准确
         scrollHeight: Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.offsetHeight
+          document.body.scrollHeight || 0,
+          document.documentElement.scrollHeight || 0,
+          document.body.offsetHeight || 0,
+          document.documentElement.offsetHeight || 0,
+          document.body.clientHeight || 0,
+          document.documentElement.clientHeight || 0
         ),
-        clientHeight: window.innerHeight || document.documentElement.clientHeight,
-        scrollTop: window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop,
-        offsetHeight: document.documentElement.offsetHeight,
-        viewportWidth: window.innerWidth || document.documentElement.clientWidth,
-        viewportHeight: window.innerHeight || document.documentElement.clientHeight,
-        bodyHeight: document.body.scrollHeight,
-        documentHeight: document.documentElement.scrollHeight
+        // 视口高度（多种获取方式）
+        clientHeight: window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight || 0,
+        viewportHeight: window.innerHeight || document.documentElement.clientHeight || 0,
+        // 当前滚动位置
+        scrollTop: window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0,
+        // 各种高度值用于调试和备用计算
+        bodyHeight: document.body.scrollHeight || 0,
+        documentHeight: document.documentElement.scrollHeight || 0,
+        offsetHeight: document.documentElement.offsetHeight || 0,
+        bodyOffsetHeight: document.body.offsetHeight || 0,
+        // 视口宽度信息
+        viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0,
+        clientWidth: document.documentElement.clientWidth || document.body.clientWidth || 0,
+        // 页面URL和其他有用信息
+        url: window.location.href,
+        title: document.title,
+        // 检查页面是否可滚动
+        isScrollable: (document.body.scrollHeight > window.innerHeight) || 
+                     (document.documentElement.scrollHeight > window.innerHeight),
+        // 最大可滚动距离
+        maxScrollTop: Math.max(
+          (document.body.scrollHeight || 0) - (window.innerHeight || 0),
+          (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0),
+          0
+        )
       };
       
-      console.log('页面信息:', scrollInfo);
+      console.log('=== Content Script 页面信息详情 ===');
+      console.log('页面URL:', scrollInfo.url);
+      console.log('页面标题:', scrollInfo.title);
+      console.log('计算的滚动高度:', scrollInfo.scrollHeight);
+      console.log('视口高度:', scrollInfo.clientHeight, '/', scrollInfo.viewportHeight);
+      console.log('body高度:', scrollInfo.bodyHeight);
+      console.log('document高度:', scrollInfo.documentHeight);
+      console.log('是否可滚动:', scrollInfo.isScrollable);
+      console.log('最大可滚动距离:', scrollInfo.maxScrollTop);
+      console.log('当前滚动位置:', scrollInfo.scrollTop);
+      
       sendResponse(scrollInfo);
       break;
       
