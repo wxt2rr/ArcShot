@@ -1,4 +1,4 @@
-# ArcShot 📸
+# ArcShot    <img src="https://github.com/wxt2rr/ArcShot/blob/main/icons/icon16.png" alt="展示" width="30" height="30">
 
 [![许可: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![版本](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/your-username/arcshot)
