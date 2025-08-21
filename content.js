@@ -266,6 +266,10 @@ function sendMessageWithRetry(retryCount = 0) {
   
   console.log(`Attempt ${retryCount + 1}: Sending message to background:`, message);
   
+  // 🔧 关键修复：发送消息前立即移除UI覆盖层
+  console.log('🚫 立即移除选择UI，确保截图时不包含覆盖层');
+  removeSelectionOverlay();
+  
   // 先检查chrome.runtime是否可用
   if (!chrome.runtime || !chrome.runtime.sendMessage) {
     console.error('chrome.runtime.sendMessage is not available');
@@ -291,10 +295,8 @@ function sendMessageWithRetry(retryCount = 0) {
         }
       } else if (response && response.success) {
         console.log('Message sent successfully');
-        // 延迟移除覆盖层，让用户看到反馈
-        setTimeout(() => {
-          removeSelectionOverlay();
-        }, 500);
+        // 🔧 修复：UI已经移除，不需要延迟
+        console.log('✅ 选择处理完成，UI已清理');
       } else {
         console.warn('Unexpected response:', response);
         if (retryCount < maxRetries) {

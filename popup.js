@@ -126,8 +126,44 @@ document.addEventListener('DOMContentLoaded', () => {
   // 检查页面是否支持content script
   function isPageSupported(url) {
     if (!url) return false;
-    const unsupportedProtocols = ['chrome://', 'chrome-extension://', 'moz-extension://', 'file://'];
-    return !unsupportedProtocols.some(protocol => url.startsWith(protocol));
+    
+    // 扩展不支持的页面协议和地址
+    const unsupportedSchemes = [
+      'chrome://', 
+      'chrome-extension://', 
+      'moz-extension://', 
+      'edge://', 
+      'about:', 
+      'file://',
+      'data:',
+      'blob:'
+    ];
+    
+    // 检查是否是不支持的协议
+    const isUnsupported = unsupportedSchemes.some(scheme => url.startsWith(scheme));
+    
+    // 特殊检查：Chrome内部页面
+    if (url.includes('chrome://') || url.includes('chrome-extension://')) {
+      return false;
+    }
+    
+    return !isUnsupported;
+  }
+
+  // 获取更友好的页面类型描述
+  function getPageTypeDescription(url) {
+    if (!url) return '未知页面';
+    
+    if (url.startsWith('chrome://')) return 'Chrome内部页面';
+    if (url.startsWith('chrome-extension://')) return 'Chrome扩展页面';
+    if (url.startsWith('moz-extension://')) return 'Firefox扩展页面';
+    if (url.startsWith('edge://')) return 'Edge内部页面';
+    if (url.startsWith('about:')) return '浏览器about页面';
+    if (url.startsWith('file://')) return '本地文件页面';
+    if (url.startsWith('data:')) return '数据URL页面';
+    if (url.startsWith('blob:')) return 'Blob页面';
+    
+    return '系统页面';
   }
 
   // 确保content script已注入
@@ -136,29 +172,35 @@ document.addEventListener('DOMContentLoaded', () => {
       // 首先尝试发送ping消息检查content script是否已加载
       chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
         if (chrome.runtime.lastError) {
+          console.log('Content script未加载，准备注入...');
           // Content script未加载，尝试注入
           chrome.scripting.executeScript({
             target: { tabId: tabId },
             files: ['content.js']
           }, (results) => {
             if (chrome.runtime.lastError) {
-              reject(new Error('注入content script失败: ' + chrome.runtime.lastError.message));
+              console.error('注入content script失败:', chrome.runtime.lastError);
+              reject(new Error(`无法在当前页面注入功能脚本\n\n可能原因：\n• 页面安全策略限制\n• 页面正在加载中\n• 浏览器权限不足\n\n建议：\n1. 刷新页面后重试\n2. 确保是普通网页（http://或https://）\n3. 检查扩展权限设置`));
               return;
             }
             
+            console.log('Content script注入成功，等待初始化...');
             // 等待一小段时间让content script初始化
             setTimeout(() => {
               // 再次检查
               chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
                 if (chrome.runtime.lastError) {
-                  reject(new Error('Content script注入后仍无法通信'));
+                  console.error('Content script注入后仍无法通信:', chrome.runtime.lastError);
+                  reject(new Error(`功能脚本注入成功但无法通信\n\n请尝试：\n1. 刷新页面后重试\n2. 检查浏览器控制台是否有错误\n3. 确认页面完全加载完成`));
                 } else {
+                  console.log('✅ Content script通信正常');
                   resolve();
                 }
               });
-            }, 500);
+            }, 800); // 增加等待时间
           });
         } else {
+          console.log('✅ Content script已加载');
           // Content script已加载
           resolve();
         }
@@ -179,16 +221,50 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 存储截图数据
-      chrome.storage.local.set({ screenshotDataUrl: dataUrl }, () => {
-        if (chrome.runtime.lastError) {
-          showMessage('保存截图失败', 'error');
-          return;
-        }
-        // 打开结果页面
-        chrome.tabs.create({ url: chrome.runtime.getURL('result.html') });
-        // 关闭popup
-        window.close();
+      // 存储截图数据 - 修复版：清除旧数据避免冲突
+      console.log('💾 准备存储全屏截图数据...');
+      
+      // 要清除的旧数据键（避免与手动截图冲突）
+      const keysToRemove = [
+        'manual_screenshot_data',
+        'manual_selection_area', 
+        'manual_needs_cropping',
+        'manual_is_scrolling',
+        'manual_stitch_images',
+        'manual_stitch_overlap',
+        'manual_metadata',
+        'manual_selection_timestamp',
+        'needsStitching',
+        'pendingStitchImages', 
+        'pendingStitchOverlap',
+        'scrollingMetadata',
+        'selectionArea',
+        'needsCropping',
+        'isScrollingMode'
+      ];
+      
+      // 先清除旧数据
+      chrome.storage.local.remove(keysToRemove, () => {
+        console.log('🧹 清除旧截图数据完成');
+        
+        // 存储新的全屏截图数据
+        const fullscreenData = {
+          screenshotDataUrl: dataUrl,
+          captureType: 'fullscreen',
+          captureTime: Date.now(),
+          isFullscreen: true
+        };
+        
+        chrome.storage.local.set(fullscreenData, () => {
+          if (chrome.runtime.lastError) {
+            throw new Error('保存截图失败');
+          }
+          console.log('✅ 全屏截图数据存储成功');
+          // 打开结果页面
+          chrome.tabs.create({ url: chrome.runtime.getURL('result.html') });
+          // 关闭popup
+          window.close();
+        });
       });
     });
   }
@@ -218,7 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // 检查页面是否支持
       if (!isPageSupported(tabs[0].url)) {
-        throw new Error('当前页面不支持截图功能（系统页面或扩展页面）');
+        const pageType = getPageTypeDescription(tabs[0].url);
+        throw new Error(`当前${pageType}不支持截图功能\n\n请切换到普通网页后重试\n\n支持的页面：http:// 或 https:// 开头的网页`);
       }
       console.log('✅ 页面类型检查通过');
 
@@ -232,16 +309,51 @@ document.addEventListener('DOMContentLoaded', () => {
       const stitchedDataUrl = await performScrollingScreenshot(tabId);
       console.log('✅ 滚动截图执行完成，数据长度:', stitchedDataUrl ? stitchedDataUrl.length : 'undefined');
       
-      // 存储截图数据
-      chrome.storage.local.set({ screenshotDataUrl: stitchedDataUrl }, () => {
-        if (chrome.runtime.lastError) {
-          throw new Error('保存截图失败');
-        }
-        console.log('✅ 截图数据存储成功');
-        // 打开结果页面
-        chrome.tabs.create({ url: chrome.runtime.getURL('result.html') });
-        // 关闭popup
-        window.close();
+      // 存储滚动截图数据 - 修复版：清除旧数据避免冲突
+      console.log('💾 准备存储全屏滚动截图数据...');
+      
+      // 要清除的旧数据键（避免与手动截图冲突）
+      const keysToRemove = [
+        'manual_screenshot_data',
+        'manual_selection_area', 
+        'manual_needs_cropping',
+        'manual_is_scrolling',
+        'manual_stitch_images',
+        'manual_stitch_overlap',
+        'manual_metadata',
+        'manual_selection_timestamp',
+        'needsStitching',
+        'pendingStitchImages', 
+        'pendingStitchOverlap',
+        'scrollingMetadata',
+        'selectionArea',
+        'needsCropping',
+        'isScrollingMode'
+      ];
+      
+      // 先清除旧数据
+      chrome.storage.local.remove(keysToRemove, () => {
+        console.log('🧹 清除旧截图数据完成');
+        
+        // 存储新的全屏滚动截图数据
+        const fullscreenScrollData = {
+          screenshotDataUrl: stitchedDataUrl,
+          captureType: 'fullscreen-scroll',
+          captureTime: Date.now(),
+          isFullscreen: true,
+          isScrolling: true
+        };
+        
+        chrome.storage.local.set(fullscreenScrollData, () => {
+          if (chrome.runtime.lastError) {
+            throw new Error('保存截图失败');
+          }
+          console.log('✅ 全屏滚动截图数据存储成功');
+          // 打开结果页面
+          chrome.tabs.create({ url: chrome.runtime.getURL('result.html') });
+          // 关闭popup
+          window.close();
+        });
       });
       
     } catch (error) {
@@ -552,7 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // 检查页面是否支持
       if (!isPageSupported(tabs[0].url)) {
-        throw new Error('当前页面不支持区域选择功能（系统页面或扩展页面）');
+        const pageType = getPageTypeDescription(tabs[0].url);
+        throw new Error(`当前${pageType}不支持区域选择功能\n\n请切换到普通网页后重试\n\n支持的页面：http:// 或 https:// 开头的网页`);
       }
 
       // 确保content script已注入
@@ -575,11 +688,12 @@ document.addEventListener('DOMContentLoaded', () => {
         showMessage('区域选择已启动！请在页面中拖拽选择区域，选择完成后会自动截图', 'success');
         setButtonLoading(manualSelectBtn, false, '手动选择');
         
-        // 关闭popup，让用户可以在页面上进行选择
+        // 🔧 修复：恢复popup自动关闭，让用户可以在页面上进行选择
         // Background script会处理后续的消息和截图逻辑
         setTimeout(() => {
           window.close();
         }, 1500);
+        console.log('✅ 区域选择已启动，popup将在1.5秒后自动关闭');
       });
       
     } catch (error) {
@@ -608,7 +722,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // 检查页面是否支持
       if (!isPageSupported(tabs[0].url)) {
-        throw new Error('当前页面不支持滚动区域选择功能（系统页面或扩展页面）');
+        const pageType = getPageTypeDescription(tabs[0].url);
+        throw new Error(`当前${pageType}不支持滚动区域选择功能\n\n请切换到普通网页后重试\n\n支持的页面：http:// 或 https:// 开头的网页`);
       }
 
       // 确保content script已注入
@@ -631,11 +746,12 @@ document.addEventListener('DOMContentLoaded', () => {
         showMessage('滚动区域选择已启动！请在页面中拖拽选择区域，选择完成后会自动截图', 'success');
         setButtonLoading(manualSelectBtn, false, '手动选择');
         
-        // 关闭popup，让用户可以在页面上进行选择
+        // 🔧 修复：恢复popup自动关闭，让用户可以在页面上进行选择
         // Background script会处理后续的消息和截图逻辑
         setTimeout(() => {
           window.close();
         }, 1500);
+        console.log('✅ 滚动区域选择已启动，popup将在1.5秒后自动关闭');
       });
       
     } catch (error) {

@@ -1,205 +1,20 @@
 document.addEventListener('DOMContentLoaded', () => {
   const screenshotPreview = document.getElementById('screenshotPreview');
-  const cornerRadiusInput = document.getElementById('cornerRadius');
+  const cornerRadius = document.getElementById('cornerRadius');
   const saveBtn = document.getElementById('saveBtn');
-  
+
   let originalDataUrl = null;
-  let isProcessing = false;
   let needsCropping = false;
   let selectionArea = null;
+  let loadAttempt = 0;
 
-  // 检查是否有处理错误
-  checkProcessingErrors();
-
-  // 显示消息函数
   function showMessage(message, type = 'info') {
-    // 移除已存在的消息
-    const existingMessage = document.querySelector('.message');
-    if (existingMessage) {
-      existingMessage.remove();
-    }
-
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `${type}-message message`;
-    messageDiv.textContent = message;
-    
-    const container = document.querySelector('.result-container');
-    container.appendChild(messageDiv);
-    
-    // 5秒后自动移除消息
-    setTimeout(() => {
-      if (messageDiv.parentNode) {
-        messageDiv.remove();
-      }
-    }, 5000);
+    // 简单的消息显示（可以根据需要扩展）
+    console.log(`[${type.toUpperCase()}] ${message}`);
   }
 
-  // 检查处理错误
-  function checkProcessingErrors() {
-    chrome.storage.local.get(['processingError', 'errorTimestamp'], (result) => {
-      if (result.processingError) {
-        const timeDiff = Date.now() - (result.errorTimestamp || 0);
-        
-        // 如果错误是在1分钟内的，显示错误信息
-        if (timeDiff < 60 * 1000) {
-          showMessage('处理过程中发生错误: ' + result.processingError, 'error');
-          
-          // 清除错误信息
-          chrome.storage.local.remove(['processingError', 'errorTimestamp']);
-        }
-      }
-    });
-  }
-
-  // 设置按钮加载状态
-  function setButtonLoading(button, loading, originalText) {
-    if (loading) {
-      button.disabled = true;
-      button.classList.add('loading');
-      button.setAttribute('data-original-text', button.textContent);
-    } else {
-      button.disabled = false;
-      button.classList.remove('loading');
-      const original = button.getAttribute('data-original-text');
-      if (original) {
-        button.textContent = original;
-        button.removeAttribute('data-original-text');
-      } else {
-        button.textContent = originalText;
-      }
-    }
-  }
-
-  // 获取截图数据
-  chrome.storage.local.get(['screenshotDataUrl', 'selectionArea', 'needsCropping', 'isScrollingMode', 'needsStitching', 'pendingStitchImages', 'pendingStitchOverlap', 'scrollingMetadata'], async (result) => {
-    if (chrome.runtime.lastError) {
-      showMessage('获取截图数据失败: ' + chrome.runtime.lastError.message, 'error');
-      return;
-    }
-    
-    console.log('🔍 === Result.js 数据检查 ===');
-    console.log('基础截图数据存在:', !!result.screenshotDataUrl);
-    console.log('截图数据长度:', result.screenshotDataUrl ? result.screenshotDataUrl.length : 0);
-    console.log('需要拼接:', result.needsStitching);
-    console.log('待拼接图片数量:', result.pendingStitchImages ? result.pendingStitchImages.length : 0);
-    console.log('滚动模式:', result.isScrollingMode);
-    console.log('需要裁剪:', result.needsCropping);
-    console.log('选择区域:', result.selectionArea);
-    console.log('滚动元数据:', result.scrollingMetadata);
-    
-    // 首先检查是否需要在result.js中进行拼接
-    if (result.needsStitching && result.pendingStitchImages && result.pendingStitchImages.length > 1) {
-      console.log('🔧 在result.js中开始拼接多张图片（Service Worker环境限制）...');
-      showMessage(`正在拼接 ${result.pendingStitchImages.length} 张图片，请稍候...`, 'info');
-      
-      try {
-        const overlap = result.pendingStitchOverlap || 0;
-        const stitchedDataUrl = await stitchImagesInResult(result.pendingStitchImages, overlap, result.scrollingMetadata);
-        
-        console.log('✅ 图片拼接完成，更新原始数据');
-        originalDataUrl = stitchedDataUrl;
-        
-        // 验证拼接结果
-        if (result.scrollingMetadata) {
-          await validateStitchedImage(stitchedDataUrl, result.scrollingMetadata);
-        }
-        
-        // 清除拼接相关的数据，更新存储的截图数据
-        chrome.storage.local.set({
-          screenshotDataUrl: stitchedDataUrl
-        });
-        chrome.storage.local.remove(['needsStitching', 'pendingStitchImages', 'pendingStitchOverlap', 'scrollingMetadata']);
-        
-        showMessage('图片拼接完成！', 'success');
-      } catch (error) {
-        console.error('❌ 图片拼接失败:', error);
-        showMessage('图片拼接失败: ' + error.message, 'error');
-        
-        // 拼接失败，使用第一张图片作为备用
-        if (result.pendingStitchImages && result.pendingStitchImages.length > 0) {
-          originalDataUrl = result.pendingStitchImages[0];
-          console.log('🔄 使用第一张图片作为备用');
-        } else if (result.screenshotDataUrl) {
-          originalDataUrl = result.screenshotDataUrl;
-          console.log('🔄 使用基础截图数据作为备用');
-        }
-      }
-    } else if (result.screenshotDataUrl) {
-      originalDataUrl = result.screenshotDataUrl;
-      console.log('📷 使用基础截图数据，长度:', originalDataUrl.length);
-    } else if (result.pendingStitchImages && result.pendingStitchImages.length === 1) {
-      // 特殊情况：滚动模式但只有一张图片
-      originalDataUrl = result.pendingStitchImages[0];
-      console.log('📷 滚动模式单张图片，直接使用');
-      // 清除不需要的拼接数据
-      chrome.storage.local.remove(['needsStitching', 'pendingStitchImages', 'pendingStitchOverlap', 'scrollingMetadata']);
-    } else {
-      // 没有任何可用的图片数据
-      console.error('❌ 没有找到截图数据');
-      showMessage('没有找到截图数据', 'error');
-      
-      // 添加一个返回按钮，让用户可以重新尝试
-      const retryBtn = document.createElement('button');
-      retryBtn.textContent = '返回重新截图';
-      retryBtn.onclick = () => {
-        chrome.tabs.getCurrent((tab) => {
-          chrome.tabs.remove(tab.id);
-        });
-      };
-      
-      const container = document.querySelector('.result-container');
-      container.appendChild(retryBtn);
-      return;
-    }
-    
-    if (originalDataUrl) {
-      needsCropping = result.needsCropping || false;
-      selectionArea = result.selectionArea || null;
-      
-      if (needsCropping && selectionArea) {
-        // 需要裁剪，显示提示
-        console.log('✂️ 开始处理区域裁剪...');
-        console.log('📐 选择区域:', selectionArea);
-        showMessage('正在处理手动选择的区域...', 'info');
-        
-        try {
-          // 裁剪图像
-          const croppedDataUrl = await cropImage(originalDataUrl, selectionArea);
-          originalDataUrl = croppedDataUrl;
-          
-          // 清除裁剪标志
-          chrome.storage.local.remove(['selectionArea', 'needsCropping', 'isScrollingMode']);
-          
-          showMessage(result.isScrollingMode ? '滚动区域裁剪完成！' : '区域裁剪完成！', 'success');
-          console.log('✅ 区域裁剪完成');
-        } catch (error) {
-          console.error('❌ 裁剪失败:', error);
-          showMessage('裁剪失败: ' + error.message, 'error');
-        }
-      } else {
-        // 不需要裁剪，直接显示
-        if (result.isScrollingMode) {
-          showMessage('滚动截图完成！', 'success');
-        }
-      }
-      
-      // 显示截图预览
-      screenshotPreview.src = originalDataUrl;
-      screenshotPreview.onload = () => {
-        if (!needsCropping) {
-          showMessage('截图加载完成，可以调整圆角效果', 'success');
-        }
-        console.log('✅ 截图预览加载完成');
-      };
-      screenshotPreview.onerror = () => {
-        showMessage('截图加载失败', 'error');
-        console.error('❌ 截图预览加载失败');
-      };
-    }
-  });
-
-  // 裁剪图像函数
-  async function cropImage(dataUrl, selectionArea) {
+  // 🔧 新增：图像裁剪函数
+  function cropImageFromCanvas(imageDataUrl, selection) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -207,61 +22,181 @@ document.addEventListener('DOMContentLoaded', () => {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          console.log('🖼️ 原始图片尺寸:', img.width, 'x', img.height);
-          console.log('📐 裁剪区域:', selectionArea);
+          // 设置画布尺寸为选择区域的尺寸
+          canvas.width = selection.width;
+          canvas.height = selection.height;
           
-          // 验证裁剪区域是否在图片范围内
-          const clampedSelection = {
-            x: Math.max(0, Math.min(selectionArea.x, img.width)),
-            y: Math.max(0, Math.min(selectionArea.y, img.height)),
-            width: Math.min(selectionArea.width, img.width - Math.max(0, selectionArea.x)),
-            height: Math.min(selectionArea.height, img.height - Math.max(0, selectionArea.y))
-          };
+          console.log('🎨 裁剪参数:');
+          console.log('  - 原图尺寸:', img.width, 'x', img.height);
+          console.log('  - 选择区域:', selection);
+          console.log('  - 画布尺寸:', canvas.width, 'x', canvas.height);
           
-          console.log('📐 调整后裁剪区域:', clampedSelection);
+          // 🔧 改进：智能处理设备像素比和坐标系
+          const devicePixelRatio = window.devicePixelRatio || 1;
+          console.log('  - 设备像素比:', devicePixelRatio);
           
-          // 确保裁剪区域有效
-          if (clampedSelection.width <= 0 || clampedSelection.height <= 0) {
-            throw new Error(`裁剪区域无效: ${clampedSelection.width}x${clampedSelection.height}`);
+          // 检查是否需要坐标调整（滚动模式 vs 普通模式）
+          let adjustedX = selection.x;
+          let adjustedY = selection.y;
+          let adjustedWidth = selection.width;
+          let adjustedHeight = selection.height;
+          
+          // 对于高DPI显示器，可能需要坐标调整
+          if (devicePixelRatio > 1) {
+            adjustedX = selection.x * devicePixelRatio;
+            adjustedY = selection.y * devicePixelRatio;
+            adjustedWidth = selection.width * devicePixelRatio;
+            adjustedHeight = selection.height * devicePixelRatio;
+            console.log('  - 高DPI调整后坐标:', { adjustedX, adjustedY, adjustedWidth, adjustedHeight });
           }
           
-          // 设置canvas尺寸为裁剪区域大小
-          canvas.width = clampedSelection.width;
-          canvas.height = clampedSelection.height;
+          // 确保裁剪区域不超出图像边界
+          const finalX = Math.max(0, Math.min(adjustedX, img.width - adjustedWidth));
+          const finalY = Math.max(0, Math.min(adjustedY, img.height - adjustedHeight));
+          const finalWidth = Math.min(adjustedWidth, img.width - finalX);
+          const finalHeight = Math.min(adjustedHeight, img.height - finalY);
           
-          // 直接使用选择区域的坐标和尺寸，不进行设备像素比调整
-          // 因为截图数据和选择坐标都是基于相同的坐标系统
+          console.log('  - 边界检查后最终坐标:', { finalX, finalY, finalWidth, finalHeight });
+          
+          // 绘制裁剪后的图像部分
           ctx.drawImage(
             img,
-            clampedSelection.x,
-            clampedSelection.y,
-            clampedSelection.width,
-            clampedSelection.height,
-            0,
-            0,
-            clampedSelection.width,
-            clampedSelection.height
+            finalX, finalY, finalWidth, finalHeight,  // 源坐标和尺寸
+            0, 0, selection.width, selection.height    // 目标坐标和尺寸
           );
           
-          console.log('✅ 裁剪完成，最终尺寸:', canvas.width, 'x', canvas.height);
-          resolve(canvas.toDataURL('image/png'));
+          const croppedDataUrl = canvas.toDataURL('image/png');
+          console.log('✅ 图像裁剪完成，裁剪后数据长度:', croppedDataUrl.length);
+          resolve(croppedDataUrl);
         } catch (error) {
-          console.error('❌ 裁剪过程出错:', error);
+          console.error('❌ 裁剪过程中出错:', error);
           reject(error);
         }
       };
       img.onerror = () => {
-        reject(new Error('裁剪图像失败：无法加载原始图片'));
+        reject(new Error('Failed to load image for cropping'));
       };
-      img.src = dataUrl;
+      img.src = imageDataUrl;
     });
   }
 
-  // 在result中实现图像拼接
-  async function stitchImagesInResult(imageDataUrls, overlap = 0, metadata = null) {
+  // 🔧 修复：重试机制处理时序问题
+  async function loadScreenshotData(attempt = 1) {
+    loadAttempt = attempt;
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.get(null, (allData) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        
+        // 🔧 修复：根据时间戳和数据完整性判断最新数据源
+        let dataSource = 'none';
+        let shouldStitch = false;
+        let mainImageData = null;
+        let stitchData = null;
+        let captureTime = 0;
+        
+        // 候选数据源（按时间戳排序）
+        const candidates = [];
+        
+        // 检查手动滚动截图数据（新版本）
+        if (allData.manual_stitch_images && allData.manual_stitch_images.length > 1) {
+          candidates.push({
+            source: 'manual_scrolling',
+            shouldStitch: true,
+            mainImageData: allData.manual_screenshot_data,
+            stitchData: allData.manual_stitch_images,
+            time: allData.manual_selection_timestamp || 0,
+            overlap: allData.manual_stitch_overlap || 0
+          });
+        }
+        
+        // 检查手动普通截图（新版本）
+        if (allData.manual_screenshot_data) {
+          candidates.push({
+            source: 'manual_simple',
+            shouldStitch: false,
+            mainImageData: allData.manual_screenshot_data,
+            stitchData: null,
+            time: allData.manual_selection_timestamp || 0
+          });
+        }
+        
+        // 检查全屏截图数据（包含时间戳）
+        if (allData.screenshotDataUrl) {
+          candidates.push({
+            source: allData.isFullscreen ? 'fullscreen' : 'legacy_simple',
+            shouldStitch: false,
+            mainImageData: allData.screenshotDataUrl,
+            stitchData: null,
+            time: allData.captureTime || allData.timestamp || 0,
+            captureType: allData.captureType || 'unknown'
+          });
+        }
+        
+        // 检查滚动截图数据（旧版本）
+        if (allData.needsStitching && allData.pendingStitchImages && allData.pendingStitchImages.length > 1) {
+          candidates.push({
+            source: 'legacy_scrolling',
+            shouldStitch: true,
+            mainImageData: allData.screenshotDataUrl,
+            stitchData: allData.pendingStitchImages,
+            time: allData.processingTimestamp || 0,
+            overlap: allData.pendingStitchOverlap || 0
+          });
+        }
+        
+        // 🔧 新增：检查需要重新生成的滚动截图数据
+        if (allData.needsStitching && allData.scrollingMetadata && allData.scrollingMetadata.needsRegenerate) {
+          candidates.push({
+            source: 'scrolling_regenerate',
+            shouldStitch: true,
+            shouldRegenerate: true,
+            mainImageData: allData.screenshotDataUrl,
+            scrollingMetadata: allData.scrollingMetadata,
+            time: allData.processingTimestamp || 0
+          });
+        }
+        
+        // 🔧 关键修复：选择时间戳最新的数据源
+        if (candidates.length > 0) {
+          const latest = candidates.reduce((prev, current) => {
+            return (current.time > prev.time) ? current : prev;
+          });
+          
+          dataSource = latest.source;
+          shouldStitch = latest.shouldStitch;
+          mainImageData = latest.mainImageData;
+          stitchData = latest.stitchData;
+          captureTime = latest.time;
+          
+          console.log(`🎯 选择最新数据源: ${dataSource} (时间: ${new Date(captureTime).toLocaleString()})`);
+          console.log(`📊 候选数据源:`, candidates.map(c => `${c.source}(${new Date(c.time).toLocaleString()})`));
+        } else {
+          console.warn('⚠️ 没有找到任何有效的截图数据');
+          showMessage('没有找到截图数据，请重新截图', 'error');
+        }
+        
+        resolve({
+          success: true,
+          dataSource,
+          shouldStitch,
+          mainImageData,
+          stitchData,
+          allData,
+          scrollingMetadata: allData.scrollingMetadata // 🔧 添加scrollingMetadata字段
+        });
+      });
+    });
+  }
+
+  // 🔧 图像拼接功能
+  function stitchImages(imageDataUrls, overlap = 0) {
     return new Promise((resolve, reject) => {
       if (!imageDataUrls || imageDataUrls.length === 0) {
-        reject(new Error('没有图片需要拼接'));
+        reject(new Error('No images provided'));
         return;
       }
       
@@ -270,230 +205,497 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      console.log(`🔧 在result.js中拼接 ${imageDataUrls.length} 张图片，重叠像素: ${overlap}`);
-      if (metadata) {
-        console.log('📊 拼接元数据:', metadata);
-      }
-
       const images = [];
       let loadedCount = 0;
 
-      // 加载所有图片
+      // Load all images first
       imageDataUrls.forEach((dataUrl, index) => {
         const img = new Image();
         img.onload = () => {
           images[index] = img;
           loadedCount++;
-          console.log(`📸 图片 ${index + 1} 加载完成: ${img.width}x${img.height}`);
           
           if (loadedCount === imageDataUrls.length) {
-            // 所有图片加载完成，开始拼接
-            try {
-              const result = performStitching();
-              resolve(result);
-            } catch (error) {
-              reject(error);
-            }
+            // All images loaded, now stitch them
+            stitchLoadedImages();
           }
         };
         img.onerror = () => {
-          reject(new Error(`图片 ${index + 1} 加载失败`));
+          reject(new Error(`Failed to load image ${index}`));
         };
         img.src = dataUrl;
       });
 
-      function performStitching() {
-        console.log('🎨 开始在result.js中执行拼接逻辑...');
-        console.log('🔄 使用popup.js中验证成功的拼接算法');
-        
-        // === 直接复制popup.js中成功的拼接逻辑 ===
-        
-        // 计算canvas尺寸
-        const canvasWidth = Math.max(...images.map(img => img.width));
-        let canvasHeight = 0;
-        
-        console.log('📏 图片尺寸分析:');
-        images.forEach((img, index) => {
-          console.log(`   图片 ${index + 1}: ${img.width}x${img.height}px`);
-        });
-        
-        // 计算总高度（考虑重叠） - 使用popup.js的简洁算法
-        for (let i = 0; i < images.length; i++) {
-          if (i === 0) {
-            canvasHeight += images[i].height;
-          } else {
-            canvasHeight += images[i].height - overlap;
-          }
-        }
-
-        console.log(`创建拼接画布: ${canvasWidth}x${canvasHeight}px`);
-
-        // 创建canvas
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = canvasWidth;
-        canvas.height = canvasHeight;
-
-        // 绘制图片 - 使用popup.js的简洁算法
-        let currentY = 0;
-        for (let i = 0; i < images.length; i++) {
-          const img = images[i];
-          const x = Math.floor((canvasWidth - img.width) / 2); // 居中对齐
+      function stitchLoadedImages() {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
           
-          console.log(`绘制图片 ${i + 1} 到位置: (${x}, ${currentY})`);
-          ctx.drawImage(img, x, currentY);
+          // Calculate total height
+          const width = images[0].width;
+          let totalHeight = images[0].height;
           
-          if (i < images.length - 1) {
-            currentY += img.height - overlap;
+          for (let i = 1; i < images.length; i++) {
+            totalHeight += (images[i].height - overlap);
           }
+          
+          canvas.width = width;
+          canvas.height = totalHeight;
+          
+          // Draw first image
+          ctx.drawImage(images[0], 0, 0);
+          
+          // Draw subsequent images with overlap
+          let currentY = images[0].height;
+          for (let i = 1; i < images.length; i++) {
+            currentY -= overlap;
+            ctx.drawImage(images[i], 0, currentY);
+            currentY += images[i].height;
+          }
+          
+          resolve(canvas.toDataURL('image/png'));
+        } catch (error) {
+          reject(error);
         }
-
-        console.log('✅ 图片拼接完成，转换为数据URL');
-        return canvas.toDataURL('image/png');
       }
     });
   }
 
-  // 验证拼接图片的尺寸
-  async function validateStitchedImage(stitchedDataUrl, metadata) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        console.log('=== 🖼️ 拼接图片尺寸验证 ===');
-        console.log('页面信息:');
-        console.log(`   - 实际页面高度: ${metadata.actualScrollHeight}px`);
-        console.log(`   - 实际视口高度: ${metadata.actualViewportHeight}px`);
-        console.log(`   - 可滚动内容: ${metadata.scrollableContent}px`);
-        console.log('拼接图片信息:');
-        console.log(`   - 拼接图片尺寸: ${img.width}x${img.height}px`);
-        console.log(`   - 图片总数: ${metadata.totalSteps}`);
-        console.log(`   - 滚动步长: ${metadata.scrollStep}px`);
-        console.log('尺寸匹配检查:');
-        console.log(`   - 高度匹配度: ${((img.height / metadata.actualScrollHeight) * 100).toFixed(1)}%`);
+  // 🔧 新增：重新生成滚动截图函数
+  async function regenerateScrollingScreenshot(metadata) {
+    console.log('🔄 开始重新生成滚动截图...');
+    console.log('📊 使用元数据:', metadata);
+    
+    try {
+      // 🔧 关键修复：验证元数据完整性
+      if (!metadata) {
+        throw new Error('滚动截图元数据缺失');
+      }
+      
+      const { totalSteps, scrollStep, actualViewportHeight, tabId: metadataTabId } = metadata;
+      
+      // 验证关键参数
+      if (!totalSteps || totalSteps <= 0) {
+        throw new Error(`无效的滚动步数: ${totalSteps}`);
+      }
+      if (!scrollStep || scrollStep <= 0) {
+        throw new Error(`无效的滚动距离: ${scrollStep}`);
+      }
+      if (!actualViewportHeight || actualViewportHeight <= 0) {
+        throw new Error(`无效的视口高度: ${actualViewportHeight}`);
+      }
+      
+      console.log(`✅ 元数据验证通过 - 步数:${totalSteps}, 滚动:${scrollStep}px, 视口:${actualViewportHeight}px`);
+      
+      // 🔧 关键修复：不查询当前活动标签页，而是使用存储的原始tabId
+      // 因为result.html是新打开的标签页，查询活动标签页会得到result页面本身
+      let tabId = metadataTabId;
+      
+      if (!tabId) {
+        // 如果没有存储的tabId，则查询当前窗口的其他标签页
+        console.warn('没有存储的tabId，尝试查询活动标签页...');
+        const tabs = await new Promise((resolve) => {
+          chrome.tabs.query({ active: true, currentWindow: true }, resolve);
+        });
         
-        const heightDiff = Math.abs(img.height - metadata.actualScrollHeight);
-        const toleranceThreshold = metadata.actualScrollHeight * 0.2; // 提高容忍度到20%
-        
-        if (heightDiff > toleranceThreshold) {
-          console.warn(`⚠️ 拼接图片高度差异较大: ${heightDiff}px (超过20%阈值: ${toleranceThreshold.toFixed(0)}px)`);
-          showMessage(`拼接完成，图片高度与页面高度有 ${heightDiff}px 差异`, 'warning');
-        } else {
-          console.log(`✅ 拼接图片高度匹配良好 (差异: ${heightDiff}px, 在20%容忍范围内)`);
+        if (!tabs[0]) {
+          throw new Error('无法获取当前标签页');
         }
-        resolve();
-      };
-      img.onerror = () => {
-        console.error('❌ 无法验证拼接图片尺寸');
-        resolve();
-      };
-      img.src = stitchedDataUrl;
-    });
+        tabId = tabs[0].id;
+      }
+      
+      console.log('🎯 使用标签页ID:', tabId);
+      
+      const screenshots = [];
+      
+      console.log(`🎬 开始重新截图，总共${totalSteps}步...`);
+      
+      // 重置滚动位置到顶部
+      await new Promise((resolve) => {
+        chrome.tabs.sendMessage(tabId, { action: 'scrollTo', y: 0 }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn('发送滚动消息失败:', chrome.runtime.lastError);
+          }
+          setTimeout(resolve, 500);
+        });
+      });
+      
+      // 🔧 关键修复：添加循环监控和错误处理
+      let successfulSteps = 0;
+      let failedSteps = 0;
+      
+      // 逐步滚动并截图
+      for (let step = 0; step < totalSteps; step++) {
+        const scrollY = step * scrollStep;
+        
+        console.log(`📸 重新生成第 ${step + 1}/${totalSteps} 步，滚动到: ${scrollY}px`);
+        
+        try {
+          // 滚动到指定位置
+          await new Promise((resolve) => {
+            chrome.tabs.sendMessage(tabId, { action: 'scrollTo', y: scrollY }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.warn(`滚动到${scrollY}失败:`, chrome.runtime.lastError);
+              }
+              setTimeout(resolve, 800); // 等待渲染
+            });
+          });
+          
+          // 🔧 关键修复：增加截图间延迟避免频率限制
+          if (step > 0) {
+            console.log(`⏱️ 截图间延迟，避免频率限制...`);
+            await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5秒间隔
+          }
+          
+          // 截图（带重试机制）
+          const dataUrl = await new Promise((resolve, reject) => {
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            const attemptCapture = () => {
+              // 🔧 关键修复：captureVisibleTab需要windowId，不是tabId
+              // 先获取tab的windowId，如果失败则使用当前窗口
+              chrome.tabs.get(tabId, (tab) => {
+                if (chrome.runtime.lastError) {
+                  console.warn('无法获取tab信息，使用当前窗口:', chrome.runtime.lastError);
+                  // 如果获取失败，使用null（当前窗口）
+                  chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+                    if (chrome.runtime.lastError) {
+                      const error = chrome.runtime.lastError.message;
+                      console.error(`❌ 第${step + 1}步截图失败:`, error);
+                      
+                      if (retryCount < maxRetries - 1 && 
+                          (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') || 
+                           error.includes('not in effect'))) {
+                        retryCount++;
+                        const delay = error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+                        console.log(`⏱️ 第${step + 1}步重试${retryCount}，等待${delay}ms...`);
+                        setTimeout(attemptCapture, delay);
+                      } else {
+                        reject(new Error(`第${step + 1}步截图失败: ${error}`));
+                      }
+                    } else {
+                      console.log(`✅ 第 ${step + 1} 步重新截图完成`);
+                      resolve(dataUrl);
+                    }
+                  });
+                } else {
+                  // 使用tab的windowId进行截图
+                  chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (dataUrl) => {
+                    if (chrome.runtime.lastError) {
+                      const error = chrome.runtime.lastError.message;
+                      console.error(`❌ 第${step + 1}步截图失败:`, error);
+                      
+                      if (retryCount < maxRetries - 1 && 
+                          (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') || 
+                           error.includes('not in effect'))) {
+                        retryCount++;
+                        const delay = error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+                        console.log(`⏱️ 第${step + 1}步重试${retryCount}，等待${delay}ms...`);
+                        setTimeout(attemptCapture, delay);
+                      } else {
+                        reject(new Error(`第${step + 1}步截图失败: ${error}`));
+                      }
+                    } else {
+                      console.log(`✅ 第 ${step + 1} 步重新截图完成`);
+                      resolve(dataUrl);
+                    }
+                  });
+                }
+              });
+            };
+            
+            attemptCapture();
+          });
+          
+          // 🔧 关键修复：验证截图数据
+          if (!dataUrl || dataUrl.length < 100) {
+            console.warn(`⚠️ 第${step + 1}步截图数据异常，长度: ${dataUrl ? dataUrl.length : 'undefined'}`);
+            failedSteps++;
+            // 仍然添加到数组，但标记为可能有问题
+          } else {
+            console.log(`✅ 第${step + 1}步截图成功，数据长度: ${dataUrl.length}`);
+            successfulSteps++;
+          }
+          
+          screenshots.push(dataUrl);
+          
+        } catch (stepError) {
+          console.error(`❌ 第${step + 1}步处理失败:`, stepError);
+          failedSteps++;
+          
+          // 🔧 关键修复：如果前几步就失败，直接抛出错误
+          if (step < 2 && screenshots.length === 0) {
+            throw new Error(`滚动截图在第${step + 1}步失败，无法继续: ${stepError.message}`);
+          }
+          
+          // 如果已经有一些成功的截图，继续但警告
+          console.warn(`⚠️ 跳过失败的第${step + 1}步，继续处理...`);
+        }
+      }
+      
+      // 🔧 关键修复：验证截图结果
+      console.log(`📊 截图统计: 成功${successfulSteps}张, 失败${failedSteps}张, 总计${screenshots.length}张`);
+      
+      if (screenshots.length === 0) {
+        throw new Error('滚动截图重新生成失败：没有成功截取任何图片');
+      }
+      
+      if (screenshots.length < totalSteps * 0.5) {
+        console.warn(`⚠️ 截图成功率较低: ${screenshots.length}/${totalSteps} (${(screenshots.length/totalSteps*100).toFixed(1)}%)`);
+      }
+      
+      console.log(`🎉 重新截图完成，开始拼接${screenshots.length}张图片...`);
+      
+      // 计算重叠像素
+      const overlap = Math.floor(actualViewportHeight * 0.15);
+      
+      // 🔧 关键修复：添加拼接前的最终验证
+      const validScreenshots = screenshots.filter(img => img && img.length > 100);
+      if (validScreenshots.length === 0) {
+        throw new Error('所有截图数据都无效，无法进行拼接');
+      }
+      
+      if (validScreenshots.length < screenshots.length) {
+        console.warn(`⚠️ 过滤掉${screenshots.length - validScreenshots.length}张无效截图，使用${validScreenshots.length}张有效截图`);
+      }
+      
+      // 拼接图片
+      const stitchedDataUrl = await stitchImages(validScreenshots, overlap);
+      console.log('✅ 滚动截图重新生成并拼接完成');
+      
+      return stitchedDataUrl;
+      
+    } catch (error) {
+      console.error('❌ 重新生成滚动截图失败:', error);
+      throw error;
+    }
   }
 
-  // 应用圆角并更新预览
-  async function updatePreview() {
-    if (!originalDataUrl || isProcessing) return;
-    
-    const radius = parseInt(cornerRadiusInput.value) || 0;
+  // 🔧 主要的加载和处理逻辑（带重试机制）
+  async function processScreenshot() {
+    try {
+      const result = await loadScreenshotData(loadAttempt);
+      
+      if (!result.success) {
+        showMessage(`获取数据失败: ${result.error}`, 'error');
+        return;
+      }
+
+      const { dataSource, shouldStitch, mainImageData, stitchData, allData, scrollingMetadata } = result;
+      
+      if (!mainImageData && !stitchData && !scrollingMetadata) {
+        // 🔧 重试机制：数据可能还未完全写入，或者需要等待更长时间
+        if (loadAttempt < 5) {
+          console.log(`⏱️ 第${loadAttempt}次尝试未找到数据，等待重试...`);
+          setTimeout(() => processScreenshot(), 1000 + (loadAttempt * 500));
+        } else {
+          console.error('❌ 多次重试后仍无法获取截图数据');
+          showMessage('无法获取截图数据，请返回重新截图', 'error');
+          // 显示重新截图的提示
+          screenshotPreview.style.display = 'none';
+          const messageDiv = document.createElement('div');
+          messageDiv.innerHTML = `
+            <div style="text-align: center; padding: 50px; color: #666;">
+              <h3>没有找到截图数据</h3>
+              <p>请返回扩展页面重新进行截图</p>
+              <button onclick="window.close()" style="padding: 10px 20px; margin-top: 10px;">关闭页面</button>
+            </div>
+          `;
+          document.querySelector('.result-container').appendChild(messageDiv);
+        }
+        return;
+      }
+
+      let finalImageData = null;
+      
+      console.log(`📊 数据源: ${dataSource}`);
+      console.log('需要拼接:', shouldStitch);
+      
+      if (shouldStitch) {
+        console.log('🔄 开始图像拼接处理...');
+        
+        if (dataSource === 'scrolling_regenerate') {
+          // 🔧 新增：处理需要重新生成的滚动截图
+          console.log('🔄 检测到需要重新生成滚动截图');
+          showMessage('正在重新生成滚动截图...', 'info');
+          
+          try {
+            // 🔧 关键修复：添加元数据验证
+            if (!scrollingMetadata) {
+              throw new Error('滚动截图元数据缺失');
+            }
+            
+            // 验证关键字段
+            const requiredFields = ['totalSteps', 'scrollStep', 'actualViewportHeight'];
+            const missingFields = requiredFields.filter(field => !scrollingMetadata[field]);
+            if (missingFields.length > 0) {
+              throw new Error(`滚动截图元数据不完整，缺少: ${missingFields.join(', ')}`);
+            }
+            
+            console.log('📊 元数据验证通过，开始重新生成...');
+            finalImageData = await regenerateScrollingScreenshot(scrollingMetadata);
+            showMessage('滚动截图重新生成完成！', 'success');
+          } catch (regenerateError) {
+            console.error('❌ 重新生成失败，使用现有数据:', regenerateError);
+            
+            // 🔧 改进：根据错误类型提供不同的用户提示
+            if (regenerateError.message.includes('元数据')) {
+              showMessage('滚动截图数据不完整，使用现有截图', 'warning');
+            } else if (regenerateError.message.includes('权限') || regenerateError.message.includes('permission')) {
+              showMessage('权限不足，请重新授权后重试', 'error');
+            } else if (regenerateError.message.includes('标签页') || regenerateError.message.includes('tab')) {
+              showMessage('页面已关闭，使用现有截图', 'warning');
+            } else {
+              showMessage('重新生成失败，使用现有截图', 'warning');
+            }
+            
+            // 使用现有的主图片数据作为fallback
+            finalImageData = mainImageData;
+          }
+          
+        } else if (stitchData && stitchData.length > 1) {
+          // 现有的拼接逻辑
+          console.log(`🧩 拼接 ${stitchData.length} 张图片...`);
+          showMessage('正在拼接图片...', 'info');
+          
+          const overlap = parseInt(allData.pendingStitchOverlap || allData.manual_stitch_overlap || 0);
+          console.log('使用重叠像素:', overlap);
+          
+          finalImageData = await stitchImages(stitchData, overlap);
+          showMessage('图片拼接完成！', 'success');
+        } else {
+          console.warn('⚠️ 需要拼接但没有足够的图片数据，使用主图片');
+          finalImageData = mainImageData;
+        }
+      } else {
+        finalImageData = mainImageData;
+      }
+
+      // 显示最终图片
+      if (finalImageData) {
+        originalDataUrl = finalImageData;
+        
+        // 🔧 关键修复：实现完整的裁剪逻辑
+        needsCropping = allData.needsCropping || allData.manual_needs_cropping || false;
+        selectionArea = allData.selectionArea || allData.manual_selection_area || null;
+        
+        console.log('🎯 检查裁剪需求:');
+        console.log('  - needsCropping:', needsCropping);
+        console.log('  - selectionArea:', selectionArea);
+        
+        if (needsCropping && selectionArea) {
+          console.log('✂️ 开始裁剪选择区域...');
+          showMessage('正在裁剪选择区域...', 'info');
+          
+          try {
+            // 使用cropImage函数裁剪选择区域
+            const croppedDataUrl = await cropImageFromCanvas(finalImageData, selectionArea);
+            console.log('✅ 区域裁剪完成');
+            
+            screenshotPreview.src = croppedDataUrl;
+            originalDataUrl = croppedDataUrl; // 更新原始数据为裁剪后的图片
+            showMessage('区域裁剪完成！', 'success');
+          } catch (error) {
+            console.error('❌ 裁剪失败:', error);
+            showMessage('裁剪失败，显示完整截图: ' + error.message, 'warning');
+            screenshotPreview.src = finalImageData; // 失败时显示原图
+          }
+        } else {
+          screenshotPreview.src = finalImageData;
+        }
+        
+        screenshotPreview.style.display = 'block';
+        showMessage('截图加载完成！', 'success');
+      } else {
+        showMessage('未能获取有效的图片数据', 'error');
+      }
+      
+    } catch (error) {
+      showMessage(`处理失败: ${error.message}`, 'error');
+      
+      // 重试机制
+      if (loadAttempt < 3) {
+        setTimeout(() => processScreenshot(), 2000);
+      }
+    }
+  }
+
+  // 应用圆角
+  function applyCornerRadius() {
+    if (!originalDataUrl) return;
+
+    const radius = parseInt(cornerRadius.value);
     
     if (radius === 0) {
       screenshotPreview.src = originalDataUrl;
       return;
     }
 
-    if (radius < 0 || radius > 50) {
-      showMessage('圆角半径必须在0-50之间', 'error');
-      cornerRadiusInput.value = Math.max(0, Math.min(50, radius));
-      return;
-    }
-
-    isProcessing = true;
-    
-    try {
-      const roundedImageUrl = await applyCornerRadius(originalDataUrl, radius);
-      screenshotPreview.src = roundedImageUrl;
-    } catch (error) {
-      console.error('应用圆角时出错:', error);
-      showMessage('应用圆角失败: ' + error.message, 'error');
-      screenshotPreview.src = originalDataUrl;
-    } finally {
-      isProcessing = false;
-    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      canvas.width = img.width;
+      canvas.height = img.height;
+      
+      // 创建圆角路径
+      ctx.beginPath();
+      ctx.roundRect(0, 0, canvas.width, canvas.height, radius);
+      ctx.clip();
+      
+      // 绘制图像
+      ctx.drawImage(img, 0, 0);
+      
+      const processedDataUrl = canvas.toDataURL('image/png');
+      screenshotPreview.src = processedDataUrl;
+    };
+    img.src = originalDataUrl;
   }
 
-  // 防抖处理，避免频繁处理
-  let updateTimeout;
-  cornerRadiusInput.addEventListener('input', () => {
-    clearTimeout(updateTimeout);
-    updateTimeout = setTimeout(updatePreview, 300);
-  });
-
-  saveBtn.addEventListener('click', async () => {
-    if (!originalDataUrl) {
-      showMessage('没有可保存的截图', 'error');
+  // 保存并下载
+  function saveScreenshot() {
+    if (!screenshotPreview.src) {
+      showMessage('没有可下载的截图', 'error');
       return;
     }
-
-    if (isProcessing) {
-      showMessage('正在处理中，请稍候...', 'info');
-      return;
-    }
-
-    setButtonLoading(saveBtn, true);
 
     try {
-      const radius = parseInt(cornerRadiusInput.value) || 0;
-      let finalImageUrl = originalDataUrl;
-      
-      if (radius > 0) {
-        if (radius < 0 || radius > 50) {
-          throw new Error('圆角半径必须在0-50之间');
-        }
-        finalImageUrl = await applyCornerRadius(originalDataUrl, radius);
-      }
-
-      // 创建下载链接
       const link = document.createElement('a');
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      link.download = `arcshot_${timestamp}.png`;
-      link.href = finalImageUrl;
+      link.href = screenshotPreview.src;
       
-      // 触发下载
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = `ArcShot-${timestamp}.png`;
+      link.download = filename;
+      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      // 显示成功消息
-      showMessage('图片下载成功！', 'success');
-      
-      // 更新按钮文本
-      saveBtn.textContent = '已保存！';
-      setTimeout(() => {
-        saveBtn.textContent = '保存并下载';
-      }, 2000);
-      
+      showMessage('截图下载完成', 'success');
     } catch (error) {
-      console.error('保存图像时出错:', error);
-      showMessage('保存失败: ' + error.message, 'error');
-    } finally {
-      setButtonLoading(saveBtn, false, '保存并下载');
+      showMessage(`下载失败: ${error.message}`, 'error');
     }
-  });
+  }
 
-  // 键盘快捷键支持
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      if (e.key === 's') {
-        e.preventDefault();
-        saveBtn.click();
-      }
-    }
-  });
+  // 事件监听器
+  cornerRadius.addEventListener('input', applyCornerRadius);
+  saveBtn.addEventListener('click', saveScreenshot);
 
-  // 添加使用提示
+  // 🔧 启动加载流程（带重试机制）
+  processScreenshot();
+  
+  // 备用重试机制
   setTimeout(() => {
-    if (originalDataUrl && !needsCropping) {
-      showMessage('提示：使用 Ctrl+S (Mac: Cmd+S) 快速保存', 'info');
+    if (!originalDataUrl) {
+      processScreenshot();
     }
-  }, 2000);
-});
+  }, 1000);
+  
+  setTimeout(() => {
+    if (!originalDataUrl) {
+      processScreenshot();
+    }
+  }, 3000);
+}); 

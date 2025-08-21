@@ -4,10 +4,13 @@
   "version": "1.0",
   "description": "增强Chrome的截图功能。",
   "permissions": [
-    "activeTab",
+    "tabs",
     "scripting",
     "downloads",
     "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

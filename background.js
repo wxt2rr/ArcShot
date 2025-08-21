@@ -81,15 +81,19 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
     console.log('TabId:', tabId);
     console.log('Scrolling mode:', isScrollingMode);
     
-    // 添加延迟确保页面稳定
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // 🔧 修复：增加延迟确保UI完全清理
+    console.log('⏰ 等待UI完全清理...');
+    await new Promise(resolve => setTimeout(resolve, 300)); // 增加到300ms确保UI清理
     
     let dataUrl;
+    let scrollingData = null;
     
     if (isScrollingMode) {
       console.log('🔄 执行滚动截图模式...');
       // 滚动模式：先进行滚动截图获取完整页面
-      dataUrl = await performScrollingScreenshotInBackground(tabId);
+      const scrollingResult = await performScrollingScreenshotInBackground(tabId);
+      dataUrl = scrollingResult.dataUrl;
+      scrollingData = scrollingResult;
       console.log('✅ 滚动截图完成，准备裁剪选择区域');
       
       // 检查是否成功获取到拼接图片
@@ -101,6 +105,8 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
       // 普通模式：截取当前可见区域
       console.log('Capturing visible tab...');
       dataUrl = await new Promise((resolve, reject) => {
+        // 🔧 关键修复：captureVisibleTab的第一个参数是windowId，不是tabId
+        // 使用null表示当前窗口
         chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
           if (chrome.runtime.lastError) {
             console.error('Capture error:', chrome.runtime.lastError);
@@ -117,7 +123,7 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
       throw new Error('截图数据为空');
     }
     
-    // 存储截图和选择信息 - 统一的存储逻辑
+    // 🔧 修复：一次性存储所有必要数据，避免竞态条件
     console.log('Storing screenshot data...');
     
     await new Promise((resolve, reject) => {
@@ -129,11 +135,36 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
         processingTimestamp: Date.now()
       };
       
+      // 🔧 关键修复：滚动模式只存储元数据，避免配额超限
+      if (isScrollingMode && scrollingData) {
+        console.log('📦 滚动模式：存储元数据，避免大图片数据');
+        storageData.needsStitching = true; // 强制为true
+        
+        // 🚨 关键修复：不存储图片数据，只存储重新生成所需的元数据
+        storageData.scrollingMetadata = {
+          actualScrollHeight: scrollingData.scrollingMetadata?.actualScrollHeight,
+          actualViewportHeight: scrollingData.scrollingMetadata?.actualViewportHeight,
+          scrollableContent: scrollingData.scrollingMetadata?.scrollableContent,
+          totalSteps: scrollingData.scrollingMetadata?.totalSteps,
+          scrollStep: scrollingData.scrollingMetadata?.scrollStep,
+          tabId: tabId, // 保存tabId以便重新截图
+          needsRegenerate: true // 标记需要重新生成
+        };
+        
+        console.log('📊 存储的元数据:');
+        console.log('   - 总步数:', storageData.scrollingMetadata.totalSteps);
+        console.log('   - 每步滚动:', storageData.scrollingMetadata.scrollStep);
+        console.log('   - 需要重新生成: true');
+        console.log('   - 不存储图片数据，避免配额超限');
+      }
+      
       console.log('💾 存储数据:', {
         dataUrlLength: dataUrl ? dataUrl.length : 0,
         selectionArea: storageData.selectionArea,
         needsCropping: storageData.needsCropping,
-        isScrollingMode: storageData.isScrollingMode
+        isScrollingMode: storageData.isScrollingMode,
+        needsStitching: storageData.needsStitching,
+        hasScrollingMetadata: !!storageData.scrollingMetadata
       });
       
       chrome.storage.local.set(storageData, () => {
@@ -166,15 +197,24 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
   } catch (error) {
     console.error('=== Error processing area selection ===');
     console.error('Error details:', error);
+    console.error('Error stack:', error.stack);
     
-    // 尝试通知用户错误
+    // 通知用户错误
+    console.log('Attempting to create error result tab...');
+    
     try {
-      chrome.storage.local.set({
-        processingError: error.message,
-        errorTimestamp: Date.now()
+      // 存储错误信息
+      await new Promise((resolve) => {
+        chrome.storage.local.set({
+          screenshotError: error.message,
+          errorTimestamp: Date.now()
+        }, resolve);
       });
-    } catch (storageError) {
-      console.error('Failed to store error:', storageError);
+      
+      // 打开错误页面
+      chrome.tabs.create({ url: chrome.runtime.getURL('result.html') });
+    } catch (errorHandlingError) {
+      console.error('Failed to handle error:', errorHandlingError);
     }
     
     throw error; // 重新抛出错误以便上层处理
@@ -220,7 +260,8 @@ async function performScrollingScreenshotInBackground(tabId) {
     if (scrollableContent <= 50) {
       console.log('⚠️ 页面内容高度不足，使用普通截图');
       console.log(`❌ 可滚动内容仅 ${scrollableContent}px，小于阈值50px`);
-      return new Promise((resolve, reject) => {
+      const fallbackDataUrl = await new Promise((resolve, reject) => {
+        // 🔧 修复：使用null表示当前窗口，不是tabId
         chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
           if (chrome.runtime.lastError) {
             reject(new Error('截图失败: ' + chrome.runtime.lastError.message));
@@ -230,6 +271,13 @@ async function performScrollingScreenshotInBackground(tabId) {
           }
         });
       });
+      
+      // 🔧 修复：返回数据对象而不是直接的dataUrl
+      return {
+        type: 'simple',
+        dataUrl: fallbackDataUrl,
+        needsStitching: false
+      };
     }
 
     console.log('🎉 页面需要滚动截图！');
@@ -288,24 +336,36 @@ async function performScrollingScreenshotInBackground(tabId) {
         console.log(`⏱️ 等待页面渲染完成...`);
         await new Promise(resolve => setTimeout(resolve, 800));
         
-        // 截图
+        // 🔧 关键修复：增加截图间延迟避免频率限制
+        if (step > 0) {
+          console.log(`⏱️ 截图间延迟，避免频率限制...`);
+          await new Promise(resolve => setTimeout(resolve, 1200)); // 至少1.2秒间隔
+        }
+        
+        // 截图（带重试机制）
         console.log(`📷 第${step + 1}步开始截图...`);
-        const dataUrl = await new Promise((resolve, reject) => {
-          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(`第${step + 1}步截图失败: ` + chrome.runtime.lastError.message));
-            } else {
-              console.log(`✅ 第 ${step + 1} 步截图完成，数据长度: ${dataUrl ? dataUrl.length : 'undefined'}`);
-              resolve(dataUrl);
-            }
-          });
-        });
+        const dataUrl = await captureWithRetry(step + 1, 3, tabId);
         
         screenshots.push(dataUrl);
         successfulSteps++;
         
       } catch (stepError) {
         console.error(`❌ 步骤 ${step + 1} 失败:`, stepError);
+        
+        // 如果是频率限制错误，增加更长延迟后重试
+        if (stepError.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
+          console.log(`⏱️ 检测到频率限制，等待3秒后重试...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          try {
+            const retryDataUrl = await captureWithRetry(step + 1, 1, tabId);
+            screenshots.push(retryDataUrl);
+            successfulSteps++;
+            continue;
+          } catch (retryError) {
+            console.error(`❌ 重试仍失败:`, retryError);
+          }
+        }
         
         // 如果是前几步失败，直接抛出错误
         if (step < 2) {
@@ -332,34 +392,23 @@ async function performScrollingScreenshotInBackground(tabId) {
       console.log(`✅ 截图成功率良好: ${screenshots.length}/${totalSteps} (${(screenshots.length/totalSteps*100).toFixed(1)}%)`);
     }
 
-    console.log(`🔧 存储 ${screenshots.length} 张图片数据，由有DOM环境的脚本处理拼接...`);
+    console.log(`🔧 返回 ${screenshots.length} 张图片数据，由调用方处理存储...`);
 
-    // 存储拼接数据，让有DOM环境的脚本处理
-    await new Promise((resolve, reject) => {
-      chrome.storage.local.set({
-        pendingStitchImages: screenshots,
-        pendingStitchOverlap: calculatedOverlap,
-        needsStitching: true,
-        scrollingMetadata: {
-          actualScrollHeight,
-          actualViewportHeight,
-          scrollableContent,
-          totalSteps: screenshots.length,
-          scrollStep
-        }
-      }, () => {
-        if (chrome.runtime.lastError) {
-          reject(new Error('存储拼接数据失败'));
-        } else {
-          console.log('✅ 拼接数据已存储，将由有DOM的环境处理');
-          resolve();
-        }
-      });
-    });
-    
-    console.log('✅ 滚动截图数据收集完成，返回第一张图片作为占位符');
-    // 返回第一张图片作为占位符，真正的拼接将在有DOM的环境中完成
-    return screenshots[0];
+    // 🔧 修复：返回完整的拼接数据对象，不在这里存储
+    return {
+      type: 'scrolling',
+      dataUrl: screenshots[0], // 第一张图片作为占位符
+      needsStitching: true,
+      pendingStitchImages: screenshots,
+      pendingStitchOverlap: calculatedOverlap,
+      scrollingMetadata: {
+        actualScrollHeight,
+        actualViewportHeight,
+        scrollableContent,
+        totalSteps: screenshots.length,
+        scrollStep
+      }
+    };
     
   } catch (error) {
     console.error('❌ 滚动截图过程出错:', error);
@@ -369,6 +418,7 @@ async function performScrollingScreenshotInBackground(tabId) {
     console.log('🔄 尝试使用普通截图作为备用方案...');
     try {
       const fallbackDataUrl = await new Promise((resolve, reject) => {
+        // 🔧 修复：使用null表示当前窗口进行fallback截图
         chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
           if (chrome.runtime.lastError) {
             reject(new Error('备用截图失败: ' + chrome.runtime.lastError.message));
@@ -379,10 +429,85 @@ async function performScrollingScreenshotInBackground(tabId) {
       });
       
       console.log('✅ 备用截图成功');
-      return fallbackDataUrl;
+      return {
+        type: 'fallback',
+        dataUrl: fallbackDataUrl,
+        needsStitching: false
+      };
     } catch (fallbackError) {
       console.error('❌ 备用截图也失败:', fallbackError);
       throw new Error(`滚动截图失败: ${error.message}，备用截图也失败: ${fallbackError.message}`);
+    }
+  }
+}
+
+// 🔧 新增：带重试机制的截图函数
+async function captureWithRetry(stepNumber, maxRetries = 3, tabId = null) {
+  for (let retry = 0; retry < maxRetries; retry++) {
+    try {
+      console.log(`📷 第${stepNumber}步截图尝试 ${retry + 1}/${maxRetries}...`);
+      
+      const dataUrl = await new Promise((resolve, reject) => {
+        // 🔧 关键修复：captureVisibleTab需要windowId，不是tabId
+        // 如果有tabId，先获取对应的windowId；否则使用null（当前窗口）
+        if (tabId) {
+          // 获取tab的windowId
+          chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError) {
+              console.warn('无法获取tab信息，使用当前窗口:', chrome.runtime.lastError);
+              // 如果获取失败，使用null（当前窗口）
+              chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+                if (chrome.runtime.lastError) {
+                  const error = chrome.runtime.lastError.message;
+                  console.error(`❌ 截图错误:`, error);
+                  reject(new Error(`第${stepNumber}步截图失败: ${error}`));
+                } else {
+                  console.log(`✅ 第 ${stepNumber} 步截图完成，数据长度: ${dataUrl ? dataUrl.length : 'undefined'}`);
+                  resolve(dataUrl);
+                }
+              });
+            } else {
+              // 使用tab的windowId进行截图
+              chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (dataUrl) => {
+                if (chrome.runtime.lastError) {
+                  const error = chrome.runtime.lastError.message;
+                  console.error(`❌ 截图错误:`, error);
+                  reject(new Error(`第${stepNumber}步截图失败: ${error}`));
+                } else {
+                  console.log(`✅ 第 ${stepNumber} 步截图完成，数据长度: ${dataUrl ? dataUrl.length : 'undefined'}`);
+                  resolve(dataUrl);
+                }
+              });
+            }
+          });
+        } else {
+          // 没有tabId，使用当前窗口
+          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+            if (chrome.runtime.lastError) {
+              const error = chrome.runtime.lastError.message;
+              console.error(`❌ 截图错误:`, error);
+              reject(new Error(`第${stepNumber}步截图失败: ${error}`));
+            } else {
+              console.log(`✅ 第 ${stepNumber} 步截图完成，数据长度: ${dataUrl ? dataUrl.length : 'undefined'}`);
+              resolve(dataUrl);
+            }
+          });
+        }
+      });
+      
+      return dataUrl;
+      
+    } catch (error) {
+      console.error(`❌ 第${stepNumber}步截图尝试${retry + 1}失败:`, error);
+      
+      if (retry < maxRetries - 1) {
+        // 如果是频率限制，延迟更长时间
+        const delay = error.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+        console.log(`⏱️ 等待 ${delay}ms 后重试...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
     }
   }
 }
