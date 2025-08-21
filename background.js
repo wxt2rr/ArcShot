@@ -224,10 +224,22 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
 // 在background中实现滚动截图逻辑
 async function performScrollingScreenshotInBackground(tabId) {
   console.log('📸 === performScrollingScreenshotInBackground 开始执行 ===');
-  console.log('目标标签页ID:', tabId);
   
   try {
-    console.log('📊 正在获取页面信息...');
+    // 🔧 新增：权限预检查
+    console.log('🔒 检查扩展权限状态...');
+    const permissions = await new Promise((resolve) => {
+      chrome.permissions.contains({
+        permissions: ['tabs'],
+        origins: ['<all_urls>']
+      }, resolve);
+    });
+    
+    if (!permissions) {
+      throw new Error('扩展权限不足，请重新授权扩展');
+    }
+    console.log('✅ 权限检查通过');
+    
     // 获取页面信息
     const pageInfo = await new Promise((resolve, reject) => {
       chrome.tabs.sendMessage(tabId, { action: 'getPageInfo' }, (response) => {
@@ -339,7 +351,7 @@ async function performScrollingScreenshotInBackground(tabId) {
         // 🔧 关键修复：增加截图间延迟避免频率限制
         if (step > 0) {
           console.log(`⏱️ 截图间延迟，避免频率限制...`);
-          await new Promise(resolve => setTimeout(resolve, 1200)); // 至少1.2秒间隔
+          await new Promise(resolve => setTimeout(resolve, 3000)); // 🔧 修复：增加到3秒间隔
         }
         
         // 截图（带重试机制）
@@ -501,8 +513,15 @@ async function captureWithRetry(stepNumber, maxRetries = 3, tabId = null) {
       console.error(`❌ 第${stepNumber}步截图尝试${retry + 1}失败:`, error);
       
       if (retry < maxRetries - 1) {
-        // 如果是频率限制，延迟更长时间
-        const delay = error.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+        // 🔧 修复：针对不同错误类型使用不同延迟
+        let delay;
+        if (error.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
+          delay = 5000; // 频率限制错误：5秒延迟
+        } else if (error.message.includes('not in effect') || error.message.includes('permission')) {
+          delay = 2000; // 权限错误：2秒延迟
+        } else {
+          delay = 1000; // 其他错误：1秒延迟
+        }
         console.log(`⏱️ 等待 ${delay}ms 后重试...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {

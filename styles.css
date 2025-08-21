@@ -1,4 +1,11 @@
-.popup-container, .result-container {
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);
+}
+
+.popup-container {
   width: 300px;
   padding: 20px;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -6,11 +13,27 @@
   border-radius: 8px;
 }
 
+.result-container {
+  width: 500px;
+  max-width: 90vw;
+  padding: 30px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #fff;
+  border-radius: 12px;
+  margin: 50px auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  display: block;
+}
+
 .popup-container h2, .result-container h2 {
   margin: 0 0 15px 0;
-  color: #333;
+  background: linear-gradient(135deg, #e91e63 0%, #2196f3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-size: 18px;
   text-align: center;
+  font-weight: 600;
 }
 
 button {
@@ -20,22 +43,25 @@ button {
   font-size: 14px;
   border: none;
   border-radius: 6px;
-  background: #4CAF50;
+  background: linear-gradient(135deg, #ff9800 0%, #ff6f00 100%);
   color: white;
   cursor: pointer;
   transition: all 0.3s ease;
   font-weight: 500;
+  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
 }
 
 button:hover:not(:disabled) {
-  background: #45a049;
+  background: linear-gradient(135deg, #ff6f00 0%, #e65100 100%);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
 }
 
 button:disabled {
   background: #cccccc;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 button:active:not(:disabled) {
@@ -43,8 +69,9 @@ button:active:not(:disabled) {
 }
 
 button.loading {
-  background: #2196F3;
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
   position: relative;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
 }
 
 button.loading:after {
@@ -69,9 +96,16 @@ button.loading:after {
 input[type="number"], input[type="checkbox"] {
   padding: 8px;
   margin: 8px 0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 2px solid #e1e5e9;
+  border-radius: 6px;
   font-size: 14px;
+  transition: border-color 0.3s ease;
+}
+
+input[type="number"]:focus {
+  outline: none;
+  border-color: #e91e63;
+  box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.1);
 }
 
 input[type="number"] {
@@ -89,19 +123,26 @@ input[type="checkbox"] {
 label {
   display: inline-block;
   margin: 8px 0;
-  color: #666;
+  color: #1976d2;
   font-size: 14px;
   vertical-align: middle;
+  font-weight: 500;
 }
 
 #screenshotPreview {
   width: 100%;
   height: auto;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  margin: 10px 0;
-  max-height: 300px;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
+  margin: 15px 0;
+  max-height: 400px;
   object-fit: contain;
+  transition: border-color 0.3s ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+#screenshotPreview:hover {
+  border-color: #e91e63;
 }
 
 .checkbox-container {
@@ -120,41 +161,45 @@ label {
 }
 
 .success-message {
-  background: #d4edda;
-  color: #155724;
-  padding: 10px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(56, 142, 60, 0.1));
+  color: #2e7d32;
+  padding: 12px;
+  border-radius: 8px;
   margin: 10px 0;
   text-align: center;
   font-size: 14px;
+  border-left: 4px solid #4caf50;
 }
 
 .error-message {
-  background: #f8d7da;
-  color: #721c24;
-  padding: 10px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(233, 30, 99, 0.1), rgba(194, 24, 91, 0.1));
+  color: #c2185b;
+  padding: 12px;
+  border-radius: 8px;
   margin: 10px 0;
   text-align: center;
   font-size: 14px;
+  border-left: 4px solid #e91e63;
 }
 
 .warning-message {
-  background: #fff3cd;
-  color: #856404;
-  padding: 10px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 111, 0, 0.1));
+  color: #ef6c00;
+  padding: 12px;
+  border-radius: 8px;
   margin: 10px 0;
   text-align: center;
   font-size: 14px;
+  border-left: 4px solid #ff9800;
 }
 
 .info-message {
-  background: #d1ecf1;
-  color: #0c5460;
-  padding: 10px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(25, 118, 210, 0.1));
+  color: #1976d2;
+  padding: 12px;
+  border-radius: 8px;
   margin: 10px 0;
   text-align: center;
   font-size: 12px;
+  border-left: 4px solid #2196f3;
 }

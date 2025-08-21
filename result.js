@@ -267,6 +267,20 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('📊 使用元数据:', metadata);
     
     try {
+      // 🔧 新增：权限预检查
+      console.log('🔒 检查扩展权限状态...');
+      const permissions = await new Promise((resolve) => {
+        chrome.permissions.contains({
+          permissions: ['tabs'],
+          origins: ['<all_urls>']
+        }, resolve);
+      });
+      
+      if (!permissions) {
+        throw new Error('扩展权限不足，请重新授权扩展');
+      }
+      console.log('✅ 权限检查通过');
+      
       // 🔧 关键修复：验证元数据完整性
       if (!metadata) {
         throw new Error('滚动截图元数据缺失');
@@ -310,11 +324,15 @@ document.addEventListener('DOMContentLoaded', () => {
       
       console.log(`🎬 开始重新截图，总共${totalSteps}步...`);
       
+      // 🔧 新增：滚动截图前的预备延迟
+      console.log('⏱️ 滚动截图预备延迟，确保系统稳定...');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2秒预备延迟
+      
       // 重置滚动位置到顶部
       await new Promise((resolve) => {
         chrome.tabs.sendMessage(tabId, { action: 'scrollTo', y: 0 }, (response) => {
           if (chrome.runtime.lastError) {
-            console.warn('发送滚动消息失败:', chrome.runtime.lastError);
+            console.warn('发送滚动消息失败:', chrome.runtime.lastError.message || chrome.runtime.lastError);
           }
           setTimeout(resolve, 500);
         });
@@ -335,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await new Promise((resolve) => {
             chrome.tabs.sendMessage(tabId, { action: 'scrollTo', y: scrollY }, (response) => {
               if (chrome.runtime.lastError) {
-                console.warn(`滚动到${scrollY}失败:`, chrome.runtime.lastError);
+                console.warn(`滚动到${scrollY}失败:`, chrome.runtime.lastError.message || chrome.runtime.lastError);
               }
               setTimeout(resolve, 800); // 等待渲染
             });
@@ -344,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // 🔧 关键修复：增加截图间延迟避免频率限制
           if (step > 0) {
             console.log(`⏱️ 截图间延迟，避免频率限制...`);
-            await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5秒间隔
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 🔧 修复：增加到3秒间隔
           }
           
           // 截图（带重试机制）
@@ -357,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
               // 先获取tab的windowId，如果失败则使用当前窗口
               chrome.tabs.get(tabId, (tab) => {
                 if (chrome.runtime.lastError) {
-                  console.warn('无法获取tab信息，使用当前窗口:', chrome.runtime.lastError);
+                  console.warn('无法获取tab信息，使用当前窗口:', chrome.runtime.lastError.message || chrome.runtime.lastError);
                   // 如果获取失败，使用null（当前窗口）
                   chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
                     if (chrome.runtime.lastError) {
@@ -368,7 +386,15 @@ document.addEventListener('DOMContentLoaded', () => {
                           (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') || 
                            error.includes('not in effect'))) {
                         retryCount++;
-                        const delay = error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+                        // 🔧 修复：针对不同错误类型使用不同延迟
+                        let delay;
+                        if (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
+                          delay = 5000; // 频率限制错误：5秒延迟
+                        } else if (error.includes('not in effect') || error.includes('permission')) {
+                          delay = 2000; // 权限错误：2秒延迟
+                        } else {
+                          delay = 1000; // 其他错误：1秒延迟
+                        }
                         console.log(`⏱️ 第${step + 1}步重试${retryCount}，等待${delay}ms...`);
                         setTimeout(attemptCapture, delay);
                       } else {
@@ -390,7 +416,15 @@ document.addEventListener('DOMContentLoaded', () => {
                           (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') || 
                            error.includes('not in effect'))) {
                         retryCount++;
-                        const delay = error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND') ? 3000 : 1000;
+                        // 🔧 修复：针对不同错误类型使用不同延迟
+                        let delay;
+                        if (error.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
+                          delay = 5000; // 频率限制错误：5秒延迟
+                        } else if (error.includes('not in effect') || error.includes('permission')) {
+                          delay = 2000; // 权限错误：2秒延迟
+                        } else {
+                          delay = 1000; // 其他错误：1秒延迟
+                        }
                         console.log(`⏱️ 第${step + 1}步重试${retryCount}，等待${delay}ms...`);
                         setTimeout(attemptCapture, delay);
                       } else {
