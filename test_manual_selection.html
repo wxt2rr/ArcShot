@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcShot 手动选择测试页面</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
+            min-height: 100vh;
+        }
+        
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+        }
+        
+        .test-section:nth-child(odd) {
+            background: #f9f9f9;
+        }
+        
+        .test-section:nth-child(even) {
+            background: #fff5f5;
+        }
+        
+        h1 {
+            color: #2563eb;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #4f46e5;
+            margin-bottom: 15px;
+        }
+        
+        .colorful-box {
+            width: 200px;
+            height: 100px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            margin: 10px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        
+        .text-content {
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .test-instruction {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2563eb;
+        }
+        
+        .test-result {
+            background: #f3e5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #9c27b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🎯 ArcShot 手动选择功能测试</h1>
+        
+        <div class="test-instruction">
+            <h3>📋 测试说明</h3>
+            <p>请按照以下步骤测试手动选择功能：</p>
+            <ol>
+                <li>点击 ArcShot 扩展图标</li>
+                <li><strong>不要勾选</strong>"智能滚动截图"选项</li>
+                <li>点击"手动选择区域"按钮</li>
+                <li>在页面上拖拽选择任意一个测试区域</li>
+                <li>检查结果页面是否正确显示选中的区域</li>
+            </ol>
+        </div>
+        
+        <div class="test-section">
+            <h2>🟦 测试区域 1 - 文本内容</h2>
+            <div class="text-content">
+                <p>这是一个包含文本内容的测试区域。您可以选择这个区域来测试文本内容的截图效果。</p>
+                <p>这段文字应该在选择后能够清晰地显示在结果页面中，没有裂图或显示异常。</p>
+                <p><strong>粗体文字</strong> 和 <em>斜体文字</em> 也应该正常显示。</p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🟨 测试区域 2 - 彩色图形</h2>
+            <div>
+                <div class="colorful-box"></div>
+                <div class="colorful-box" style="background: linear-gradient(45deg, #667eea, #764ba2);"></div>
+                <div class="colorful-box" style="background: linear-gradient(45deg, #f093fb, #f5576c);"></div>
+                <p>选择包含彩色渐变框的区域，测试图形元素的截图质量。</p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🟩 测试区域 3 - 混合内容</h2>
+            <div class="text-content">
+                <h3>混合内容测试</h3>
+                <div class="colorful-box" style="float: left; margin-right: 20px;"></div>
+                <p>这个区域包含了文字和图形的混合内容。选择这个区域可以测试复杂布局的截图效果。</p>
+                <p>浮动元素、文字环绕等复杂布局应该都能正确截图。</p>
+                <div style="clear: both;"></div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🟪 测试区域 4 - 小尺寸区域</h2>
+            <div style="width: 150px; height: 80px; background: #8e24aa; color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                小区域测试
+            </div>
+            <p style="font-size: 12px; color: #666;">测试小尺寸区域的选择和截图精度</p>
+        </div>
+        
+        <div class="test-result">
+            <h3>✅ 预期结果</h3>
+            <p>如果手动选择功能正常工作，您应该看到：</p>
+            <ul>
+                <li>能够在页面上看到选择覆盖层和拖拽框</li>
+                <li>选择完成后popup自动关闭</li>
+                <li>结果页面正确显示所选区域的内容</li>
+                <li>图像清晰，没有裂图或像素错位</li>
+                <li>颜色和文字都正确显示</li>
+            </ul>
+        </div>
+        
+        <div class="test-instruction">
+            <h3>🔧 如果出现问题</h3>
+            <p>如果看到裂图或显示异常，请：</p>
+            <ol>
+                <li>打开浏览器开发者工具查看控制台错误</li>
+                <li>检查是否有JavaScript错误</li>
+                <li>尝试刷新页面后重新测试</li>
+                <li>检查扩展是否已正确加载</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        // 添加一些调试信息
+        console.log('🎯 ArcShot 测试页面加载完成');
+        console.log('页面尺寸:', {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollWidth: document.documentElement.scrollWidth,
+            scrollHeight: document.documentElement.scrollHeight
+        });
+        
+        // 监听选择事件（如果有的话）
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'ARCSHOT_AREA_SELECTED') {
+                console.log('📍 检测到区域选择:', event.data.selection);
+            }
+        });
+    </script>
+</body>
+</html>

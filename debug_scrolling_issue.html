@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcShot 滚动截图问题诊断工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .debug-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status-item {
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ccc;
+        }
+        .status-ok { border-left-color: #28a745; background: #f8fff9; }
+        .status-warning { border-left-color: #ffc107; background: #fffdf5; }
+        .status-error { border-left-color: #dc3545; background: #fff8f8; }
+        .fix-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px 0 0;
+        }
+        .fix-button:hover { background: #0056b3; }
+        .info-box {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        h1 { color: #333; text-align: center; }
+        h2 { color: #555; }
+        pre { background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="debug-container">
+        <h1>🔧 ArcShot 滚动截图问题诊断工具</h1>
+        
+        <div class="info-box">
+            <h3>📋 使用说明</h3>
+            <ol>
+                <li>点击"开始诊断"按钮检查当前状态</li>
+                <li>查看诊断结果，红色表示需要修复的问题</li>
+                <li>按照建议的修复步骤操作</li>
+                <li>修复完成后重新测试手动+滚动截图功能</li>
+            </ol>
+        </div>
+
+        <button id="diagnoseBtn" class="fix-button">🔍 开始诊断</button>
+        <button id="clearStorageBtn" class="fix-button">🧹 清除存储数据</button>
+        
+        <div id="diagnosisResults"></div>
+
+        <div class="info-box">
+            <h3>🎯 修复后测试步骤</h3>
+            <ol>
+                <li>打开任意网页（内容要足够长需要滚动）</li>
+                <li>点击 ArcShot 扩展图标</li>
+                <li><strong>勾选</strong>"智能滚动截图"选项</li>
+                <li>点击"手动选择区域"按钮</li>
+                <li>选择一个区域（确保区域足够大需要滚动）</li>
+                <li>等待截图完成，结果页应该显示拼接后的长图</li>
+            </ol>
+        </div>
+
+        <div class="info-box">
+            <h3>⚠️ 常见问题处理</h3>
+            <ul>
+                <li><strong>权限问题</strong>：重新加载扩展或重启浏览器</li>
+                <li><strong>标签页问题</strong>：确保原始页面未关闭</li>
+                <li><strong>超时问题</strong>：选择较小的区域或网络较好的页面</li>
+                <li><strong>数据残留</strong>：使用"清除存储数据"按钮</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const diagnoseBtn = document.getElementById('diagnoseBtn');
+        const clearStorageBtn = document.getElementById('clearStorageBtn');
+        const diagnosisResults = document.getElementById('diagnosisResults');
+
+        // 诊断系统状态
+        async function diagnoseSystem() {
+            diagnosisResults.innerHTML = '<h2>🔍 诊断进行中...</h2>';
+            
+            const results = [];
+            
+            // 1. 检查扩展权限
+            try {
+                const hasPermissions = await new Promise((resolve) => {
+                    chrome.permissions.contains({
+                        permissions: ['tabs', 'storage'],
+                        origins: ['<all_urls>']
+                    }, resolve);
+                });
+                
+                if (hasPermissions) {
+                    results.push({
+                        type: 'ok',
+                        title: '✅ 扩展权限',
+                        message: '所有必需权限已授权'
+                    });
+                } else {
+                    results.push({
+                        type: 'error',
+                        title: '❌ 扩展权限不足',
+                        message: '缺少必要权限，请重新加载扩展',
+                        fix: '重新加载ArcShot扩展'
+                    });
+                }
+            } catch (error) {
+                results.push({
+                    type: 'error',
+                    title: '❌ 权限检查失败',
+                    message: error.message
+                });
+            }
+
+            // 2. 检查存储数据
+            try {
+                const storageData = await new Promise((resolve) => {
+                    chrome.storage.local.get(null, resolve);
+                });
+                
+                const keys = Object.keys(storageData);
+                if (keys.length === 0) {
+                    results.push({
+                        type: 'ok',
+                        title: '✅ 存储状态',
+                        message: '存储数据干净，无残留数据'
+                    });
+                } else {
+                    results.push({
+                        type: 'warning',
+                        title: '⚠️ 存储数据',
+                        message: `发现${keys.length}项存储数据: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}`,
+                        fix: '建议清除存储数据后重新测试'
+                    });
+                }
+                
+                // 检查是否有滚动截图相关数据
+                const scrollingKeys = keys.filter(key => 
+                    key.includes('scrolling') || 
+                    key.includes('stitch') || 
+                    key.includes('metadata')
+                );
+                
+                if (scrollingKeys.length > 0) {
+                    results.push({
+                        type: 'warning',
+                        title: '⚠️ 滚动截图残留数据',
+                        message: `发现滚动截图相关数据: ${scrollingKeys.join(', ')}`,
+                        fix: '这些数据可能导致问题，建议清除'
+                    });
+                }
+            } catch (error) {
+                results.push({
+                    type: 'error',
+                    title: '❌ 存储检查失败',
+                    message: error.message
+                });
+            }
+
+            // 3. 检查当前标签页状态
+            try {
+                const tabs = await new Promise((resolve) => {
+                    chrome.tabs.query({ currentWindow: true }, resolve);
+                });
+                
+                const currentTab = tabs.find(tab => tab.active);
+                const nonExtensionTabs = tabs.filter(tab => 
+                    !tab.url.startsWith('chrome-extension://') && 
+                    !tab.url.startsWith('chrome://')
+                );
+                
+                if (nonExtensionTabs.length > 0) {
+                    results.push({
+                        type: 'ok',
+                        title: '✅ 标签页状态',
+                        message: `找到${nonExtensionTabs.length}个可截图的标签页`
+                    });
+                } else {
+                    results.push({
+                        type: 'warning',
+                        title: '⚠️ 标签页状态',
+                        message: '没有找到可截图的普通网页标签页',
+                        fix: '请打开一个普通网页进行测试'
+                    });
+                }
+            } catch (error) {
+                results.push({
+                    type: 'error',
+                    title: '❌ 标签页检查失败',
+                    message: error.message
+                });
+            }
+
+            // 显示结果
+            displayResults(results);
+        }
+
+        // 显示诊断结果
+        function displayResults(results) {
+            let html = '<h2>🔍 诊断结果</h2>';
+            
+            results.forEach(result => {
+                html += `
+                    <div class="status-item status-${result.type}">
+                        <h3>${result.title}</h3>
+                        <p>${result.message}</p>
+                        ${result.fix ? `<p><strong>建议修复：</strong>${result.fix}</p>` : ''}
+                    </div>
+                `;
+            });
+
+            // 添加修复建议
+            const hasErrors = results.some(r => r.type === 'error');
+            const hasWarnings = results.some(r => r.type === 'warning');
+            
+            if (hasErrors) {
+                html += `
+                    <div class="status-item status-error">
+                        <h3>🚨 发现严重问题</h3>
+                        <p>请先解决上述错误问题，然后重新诊断。</p>
+                    </div>
+                `;
+            } else if (hasWarnings) {
+                html += `
+                    <div class="status-item status-warning">
+                        <h3>⚠️ 发现潜在问题</h3>
+                        <p>建议处理上述警告问题，然后进行测试。</p>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="status-item status-ok">
+                        <h3>✅ 系统状态良好</h3>
+                        <p>可以开始测试手动+滚动截图功能。</p>
+                    </div>
+                `;
+            }
+            
+            diagnosisResults.innerHTML = html;
+        }
+
+        // 清除存储数据
+        function clearStorage() {
+            if (!confirm('确定要清除所有ArcShot存储数据吗？这将删除所有截图缓存。')) {
+                return;
+            }
+            
+            chrome.storage.local.clear(() => {
+                if (chrome.runtime.lastError) {
+                    alert('清除失败: ' + chrome.runtime.lastError.message);
+                } else {
+                    alert('✅ 存储数据已清除！建议重新进行诊断。');
+                    diagnosisResults.innerHTML = '<p>存储数据已清除，请重新诊断。</p>';
+                }
+            });
+        }
+
+        // 事件监听器
+        diagnoseBtn.addEventListener('click', diagnoseSystem);
+        clearStorageBtn.addEventListener('click', clearStorage);
+
+        // 页面加载完成后自动进行一次诊断
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🔧 ArcShot 诊断工具已加载');
+        });
+    </script>
+</body>
+</html>

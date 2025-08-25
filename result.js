@@ -9,7 +9,38 @@ document.addEventListener('DOMContentLoaded', () => {
   let loadAttempt = 0;
 
   function showMessage(message, type = 'info') {
-    // 简单的消息显示（可以根据需要扩展）
+    // 移除已存在的消息
+    const existingMessage = document.querySelector('.dynamic-message');
+    if (existingMessage) {
+      existingMessage.remove();
+    }
+
+    // 创建新的消息元素
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-${type} dynamic-message`;
+    messageDiv.textContent = message;
+    
+    // 插入到editing-panel的开头
+    const editingPanel = document.querySelector('.editing-panel');
+    if (editingPanel) {
+      editingPanel.insertBefore(messageDiv, editingPanel.firstChild);
+    } else {
+      // 如果找不到editing-panel，插入到container开头
+      const container = document.querySelector('.result-container');
+      if (container) {
+        container.insertBefore(messageDiv, container.firstChild);
+      }
+    }
+    
+    // 自动移除成功和信息类消息
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        if (messageDiv.parentNode) {
+          messageDiv.remove();
+        }
+      }, 3000);
+    }
+    
     console.log(`[${type.toUpperCase()}] ${message}`);
   }
 
@@ -31,24 +62,18 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log('  - 选择区域:', selection);
           console.log('  - 画布尺寸:', canvas.width, 'x', canvas.height);
           
-          // 🔧 改进：智能处理设备像素比和坐标系
+          // 🔧 修复：Chrome扩展的captureVisibleTab已经返回实际像素大小
+          // 不需要再乘以devicePixelRatio，直接使用selection坐标
           const devicePixelRatio = window.devicePixelRatio || 1;
-          console.log('  - 设备像素比:', devicePixelRatio);
+          console.log('  - 设备像素比:', devicePixelRatio, '(仅用于调试，不影响计算)');
           
-          // 检查是否需要坐标调整（滚动模式 vs 普通模式）
+          // 直接使用selection的坐标，Chrome扩展截图已经是正确的像素比
           let adjustedX = selection.x;
           let adjustedY = selection.y;
           let adjustedWidth = selection.width;
           let adjustedHeight = selection.height;
           
-          // 对于高DPI显示器，可能需要坐标调整
-          if (devicePixelRatio > 1) {
-            adjustedX = selection.x * devicePixelRatio;
-            adjustedY = selection.y * devicePixelRatio;
-            adjustedWidth = selection.width * devicePixelRatio;
-            adjustedHeight = selection.height * devicePixelRatio;
-            console.log('  - 高DPI调整后坐标:', { adjustedX, adjustedY, adjustedWidth, adjustedHeight });
-          }
+          console.log('  - 使用原始坐标（Chrome扩展已处理像素比）:', { adjustedX, adjustedY, adjustedWidth, adjustedHeight });
           
           // 确保裁剪区域不超出图像边界
           const finalX = Math.max(0, Math.min(adjustedX, img.width - adjustedWidth));
@@ -113,6 +138,18 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
         
+        // 🔧 新增：检查新格式的手动+滚动截图数据
+        if (allData.needsStitching && allData.pendingStitchImages && allData.pendingStitchImages.length > 1 && allData.captureType === 'manual-scrolling') {
+          candidates.push({
+            source: 'manual_scrolling_new',
+            shouldStitch: true,
+            mainImageData: allData.screenshotDataUrl,
+            stitchData: allData.pendingStitchImages,
+            time: allData.processingTimestamp || 0,
+            overlap: allData.pendingStitchOverlap || 0
+          });
+        }
+        
         // 检查手动普通截图（新版本）
         if (allData.manual_screenshot_data) {
           candidates.push({
@@ -124,8 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
         
-        // 检查全屏截图数据（包含时间戳）
-        if (allData.screenshotDataUrl) {
+        // 检查全屏截图数据（包含时间戳）- 排除滚动截图
+        if (allData.screenshotDataUrl && !allData.needsStitching && allData.captureType !== 'manual-scrolling') {
           candidates.push({
             source: allData.isFullscreen ? 'fullscreen' : 'legacy_simple',
             shouldStitch: false,
@@ -160,11 +197,26 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
         
-        // 🔧 关键修复：选择时间戳最新的数据源
+        // 🔧 关键修复：优先选择需要拼接的数据源，然后按时间戳选择
         if (candidates.length > 0) {
-          const latest = candidates.reduce((prev, current) => {
-            return (current.time > prev.time) ? current : prev;
-          });
+          // 优先选择需要拼接的数据源
+          const stitchingCandidates = candidates.filter(c => c.shouldStitch);
+          const nonStitchingCandidates = candidates.filter(c => !c.shouldStitch);
+          
+          let latest;
+          if (stitchingCandidates.length > 0) {
+            // 如果有需要拼接的候选项，优先选择最新的
+            latest = stitchingCandidates.reduce((prev, current) => {
+              return (current.time > prev.time) ? current : prev;
+            });
+            console.log(`🎯 优先选择拼接数据源: ${latest.source}`);
+          } else {
+            // 否则选择最新的非拼接数据源
+            latest = nonStitchingCandidates.reduce((prev, current) => {
+              return (current.time > prev.time) ? current : prev;
+            });
+            console.log(`🎯 选择非拼接数据源: ${latest.source}`);
+          }
           
           dataSource = latest.source;
           shouldStitch = latest.shouldStitch;
@@ -172,8 +224,9 @@ document.addEventListener('DOMContentLoaded', () => {
           stitchData = latest.stitchData;
           captureTime = latest.time;
           
-          console.log(`🎯 选择最新数据源: ${dataSource} (时间: ${new Date(captureTime).toLocaleString()})`);
-          console.log(`📊 候选数据源:`, candidates.map(c => `${c.source}(${new Date(c.time).toLocaleString()})`));
+          console.log(`📊 数据源: ${dataSource} (时间: ${new Date(captureTime).toLocaleString()})`);
+          console.log(`📊 需要拼接: ${shouldStitch}`);
+          console.log(`📊 候选数据源:`, candidates.map(c => `${c.source}(拼接:${c.shouldStitch},时间:${new Date(c.time).toLocaleString()})`));
         } else {
           console.warn('⚠️ 没有找到任何有效的截图数据');
           showMessage('没有找到截图数据，请重新截图', 'error');
@@ -189,6 +242,44 @@ document.addEventListener('DOMContentLoaded', () => {
           scrollingMetadata: allData.scrollingMetadata // 🔧 添加scrollingMetadata字段
         });
       });
+    });
+  }
+
+  // 🔧 新增：手动+滚动截图的宽度裁剪功能
+  async function cropWidthAfterStitching(stitchedImageDataUrl, selection) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // 设置画布尺寸为选择区域的宽度，高度保持不变
+          canvas.width = selection.width;
+          canvas.height = img.height;
+          
+          // 从拼接后的长图中按选择区域的x和width进行裁剪
+          ctx.drawImage(
+            img,
+            selection.x, // 源图像的x坐标
+            0,           // 源图像的y坐标（拼接后已经处理了高度）
+            selection.width, // 源图像的宽度
+            img.height,  // 源图像的高度（完整高度）
+            0,           // 目标画布的x坐标
+            0,           // 目标画布的y坐标
+            selection.width, // 目标画布的宽度
+            img.height   // 目标画布的高度
+          );
+          
+          resolve(canvas.toDataURL('image/png'));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => {
+        reject(new Error('无法加载拼接后的图像进行宽度裁剪'));
+      };
+      img.src = stitchedImageDataUrl;
     });
   }
 
@@ -301,21 +392,35 @@ document.addEventListener('DOMContentLoaded', () => {
       
       console.log(`✅ 元数据验证通过 - 步数:${totalSteps}, 滚动:${scrollStep}px, 视口:${actualViewportHeight}px`);
       
-      // 🔧 关键修复：不查询当前活动标签页，而是使用存储的原始tabId
-      // 因为result.html是新打开的标签页，查询活动标签页会得到result页面本身
+      // 🔧 关键修复：正确获取原始页面的tabId
+      // 因为result.html是新打开的标签页，不能查询当前活动标签页
       let tabId = metadataTabId;
       
       if (!tabId) {
-        // 如果没有存储的tabId，则查询当前窗口的其他标签页
-        console.warn('没有存储的tabId，尝试查询活动标签页...');
-        const tabs = await new Promise((resolve) => {
-          chrome.tabs.query({ active: true, currentWindow: true }, resolve);
+        // 如果没有存储的tabId，尝试查询除当前页面外的其他标签页
+        console.warn('没有存储的原始tabId，尝试查找非result页面的标签页...');
+        const allTabs = await new Promise((resolve) => {
+          chrome.tabs.query({ currentWindow: true }, resolve);
         });
         
-        if (!tabs[0]) {
-          throw new Error('无法获取当前标签页');
+        if (!allTabs || allTabs.length === 0) {
+          throw new Error('无法获取窗口中的标签页列表');
         }
-        tabId = tabs[0].id;
+        
+        // 查找非result页面的标签页（排除chrome-extension://开头的页面）
+        const nonExtensionTabs = allTabs.filter(tab => 
+          !tab.url.startsWith('chrome-extension://') && 
+          !tab.url.startsWith('chrome://') &&
+          tab.url !== 'about:blank'
+        );
+        
+        if (nonExtensionTabs.length === 0) {
+          throw new Error('没有找到可用的原始页面标签页');
+        }
+        
+        // 选择第一个非扩展页面标签页
+        tabId = nonExtensionTabs[0].id;
+        console.log(`🎯 找到可用标签页: ${nonExtensionTabs[0].url} (ID: ${tabId})`);
       }
       
       console.log('🎯 使用标签页ID:', tabId);
@@ -568,24 +673,46 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             console.log('📊 元数据验证通过，开始重新生成...');
-            finalImageData = await regenerateScrollingScreenshot(scrollingMetadata);
+            
+            // 🔧 关键修复：添加30秒超时保护机制
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => {
+                reject(new Error('滚动截图重新生成超时（30秒），使用现有截图'));
+              }, 30000);
+            });
+            
+            const regeneratePromise = regenerateScrollingScreenshot(scrollingMetadata);
+            
+            // 使用Promise.race实现超时控制
+            finalImageData = await Promise.race([regeneratePromise, timeoutPromise]);
             showMessage('滚动截图重新生成完成！', 'success');
           } catch (regenerateError) {
             console.error('❌ 重新生成失败，使用现有数据:', regenerateError);
             
             // 🔧 改进：根据错误类型提供不同的用户提示
-            if (regenerateError.message.includes('元数据')) {
+            if (regenerateError.message.includes('超时')) {
+              showMessage('重新生成超时，使用现有截图', 'warning');
+            } else if (regenerateError.message.includes('元数据')) {
               showMessage('滚动截图数据不完整，使用现有截图', 'warning');
             } else if (regenerateError.message.includes('权限') || regenerateError.message.includes('permission')) {
               showMessage('权限不足，请重新授权后重试', 'error');
             } else if (regenerateError.message.includes('标签页') || regenerateError.message.includes('tab')) {
-              showMessage('页面已关闭，使用现有截图', 'warning');
+              showMessage('原始页面已关闭，使用现有截图', 'warning');
             } else {
-              showMessage('重新生成失败，使用现有截图', 'warning');
+              showMessage('重新生成失败，使用现有截图: ' + regenerateError.message, 'warning');
             }
             
-            // 使用现有的主图片数据作为fallback
+            // 🔧 关键修复：确保有fallback数据
             finalImageData = mainImageData;
+            if (!finalImageData && stitchData && stitchData.length > 0) {
+              // 如果没有主图片数据，尝试使用拼接数据的第一张
+              console.log('🔄 使用拼接数据的第一张作为fallback');
+              finalImageData = stitchData[0];
+            }
+            
+            if (!finalImageData) {
+              throw new Error('没有可用的截图数据');
+            }
           }
           
         } else if (stitchData && stitchData.length > 1) {
@@ -596,8 +723,37 @@ document.addEventListener('DOMContentLoaded', () => {
           const overlap = parseInt(allData.pendingStitchOverlap || allData.manual_stitch_overlap || 0);
           console.log('使用重叠像素:', overlap);
           
-          finalImageData = await stitchImages(stitchData, overlap);
-          showMessage('图片拼接完成！', 'success');
+          const stitchedImage = await stitchImages(stitchData, overlap);
+          
+          // 🔧 新增：检查是否需要宽度裁剪（手动+滚动模式）
+          const needsWidthCropping = scrollingMetadata?.needsWidthCropping || 
+                                   allData.scrollingMetadata?.needsWidthCropping || 
+                                   (allData.captureType === 'manual-scrolling' && allData.selectionArea);
+          const selectionArea = allData.selectionArea;
+          
+          console.log('🔍 宽度裁剪检查:');
+          console.log('  - needsWidthCropping:', needsWidthCropping);
+          console.log('  - captureType:', allData.captureType);
+          console.log('  - selectionArea:', selectionArea);
+          
+          if (needsWidthCropping && selectionArea && selectionArea.width && selectionArea.x !== undefined) {
+            console.log('📎 执行手动+滚动截图的宽度裁剪...');
+            console.log('选择区域:', selectionArea);
+            showMessage('正在进行宽度裁剪...', 'info');
+            
+            try {
+              finalImageData = await cropWidthAfterStitching(stitchedImage, selectionArea);
+              showMessage('手动+滚动截图宽度裁剪完成！', 'success');
+              console.log('✅ 宽度裁剪完成');
+            } catch (croppingError) {
+              console.error('❌ 宽度裁剪失败:', croppingError);
+              showMessage('宽度裁剪失败，使用完整拼接图像', 'warning');
+              finalImageData = stitchedImage;
+            }
+          } else {
+            finalImageData = stitchedImage;
+            showMessage('图片拼接完成！', 'success');
+          }
         } else {
           console.warn('⚠️ 需要拼接但没有足够的图片数据，使用主图片');
           finalImageData = mainImageData;

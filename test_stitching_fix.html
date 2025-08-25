@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcShot 拼接功能修复测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            line-height: 1.6;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid;
+        }
+        .success { background: #d4edda; border-left-color: #28a745; }
+        .error { background: #f8d7da; border-left-color: #dc3545; }
+        .warning { background: #fff3cd; border-left-color: #ffc107; }
+        .info { background: #d1ecf1; border-left-color: #17a2b8; }
+        .btn {
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 8px;
+            font-size: 14px;
+        }
+        .btn:hover { background: #1d4ed8; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .flow-diagram {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .fixed-indicator {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✅ ArcShot 拼接功能修复完成</h1>
+        
+        <div class="status success">
+            <h3>🎯 问题已解决</h3>
+            <p><strong>原问题</strong>：手动+滚动截图收集了多张图片，但结果页面只显示第一张图片，没有进行拼接</p>
+            <p><strong>根本原因</strong>：result.js没有正确识别新格式的滚动截图数据，缺少 <code>captureType === 'manual-scrolling'</code> 的检测逻辑</p>
+            <p><strong>修复结果</strong>：现在能够正确识别并拼接所有滚动截图</p>
+        </div>
+
+        <div class="status info">
+            <h3>🔧 修复详情</h3>
+            <div class="flow-diagram">修复前的数据流问题：
+background.js 存储数据:
+{
+  needsStitching: true,
+  pendingStitchImages: [img1, img2, img3, ...],
+  captureType: 'manual-scrolling',
+  ...
+}
+        ↓
+result.js 数据检测:
+❌ 没有匹配的数据源检测逻辑
+❌ 只显示第一张图片
+
+修复后的数据流：
+background.js 存储数据:
+{
+  needsStitching: true,
+  pendingStitchImages: [img1, img2, img3, ...],
+  captureType: 'manual-scrolling',
+  ...
+}
+        ↓
+result.js 数据检测:
+<span class="fixed-indicator">✅ 新增 manual_scrolling_new 数据源检测</span>
+<span class="fixed-indicator">✅ 正确识别 needsStitching = true</span>
+<span class="fixed-indicator">✅ 触发拼接逻辑</span>
+<span class="fixed-indicator">✅ 进行宽度裁剪</span></div>
+        </div>
+
+        <div class="status warning">
+            <h3>🧪 重新测试步骤</h3>
+            <p>请按照以下步骤验证拼接修复效果：</p>
+            <ol>
+                <li><strong>重新加载扩展</strong>：到 chrome://extensions/ 重新加载ArcShot</li>
+                <li><strong>打开长页面</strong>：选择一个内容丰富、需要滚动的网页</li>
+                <li><strong>启用滚动模式</strong>：勾选"智能滚动截图"选项</li>
+                <li><strong>选择测试区域</strong>：选择一个较大的区域（跨越多个屏幕）</li>
+                <li><strong>等待处理完成</strong>：观察多个滚动步骤</li>
+                <li><strong>检查结果页面</strong>：应该看到拼接后的长图</li>
+            </ol>
+        </div>
+
+        <div class="status info">
+            <h3>📊 期望看到的改进</h3>
+            <div class="flow-diagram">修复前：
+Console: "📊 数据源: legacy_scrolling" 或找不到数据源
+结果页: 只显示第一张截图
+状态: "无需拼接" 或 "找不到数据"
+
+修复后：
+Console: <span class="highlight">"📊 数据源: manual_scrolling_new"</span>
+Console: <span class="highlight">"需要拼接: true"</span>
+Console: <span class="highlight">"🔄 开始图像拼接处理..."</span>
+Console: <span class="highlight">"📎 执行手动+滚动截图的宽度裁剪..."</span>
+结果页: <span class="highlight">显示拼接后的完整长图</span></div>
+        </div>
+
+        <div class="status info">
+            <h3>🔍 调试提示</h3>
+            <p>如果修复后仍有问题，请在Chrome开发者工具Console中查看：</p>
+            <ul>
+                <li><strong>"📊 数据源:"</strong> - 应该显示 <code>manual_scrolling_new</code></li>
+                <li><strong>"需要拼接:"</strong> - 应该显示 <code>true</code></li>
+                <li><strong>"🔄 开始图像拼接处理..."</strong> - 确认拼接逻辑被触发</li>
+                <li><strong>"📎 执行手动+滚动截图的宽度裁剪..."</strong> - 确认宽度裁剪正常</li>
+            </ul>
+        </div>
+
+        <div class="status success">
+            <h3>🎉 预期最终效果</h3>
+            <p>修复完成后，您应该能够：</p>
+            <ul>
+                <li>✅ 看到多步滚动截图过程</li>
+                <li>✅ 看到拼接处理信息</li>
+                <li>✅ 获得完整的长图（包含所有滚动内容）</li>
+                <li>✅ 正确的宽度裁剪（只显示选择区域的宽度）</li>
+                <li>✅ 高质量的最终图像</li>
+            </ul>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <button class="btn" onclick="openExtensions()">🔄 重新加载扩展</button>
+            <button class="btn btn-success" onclick="startTest()">🧪 开始测试</button>
+        </div>
+
+        <div class="status info" style="margin-top: 30px;">
+            <h4>💡 最佳测试建议</h4>
+            <ul>
+                <li><strong>选择长文章页面</strong>：如新闻文章、技术文档等内容丰富的页面</li>
+                <li><strong>选择较大区域</strong>：高度至少是屏幕高度的2-3倍</li>
+                <li><strong>观察Console日志</strong>：确认数据源识别和拼接过程</li>
+                <li><strong>检查最终尺寸</strong>：长图应该明显比单张截图更长</li>
+                <li><strong>验证内容完整性</strong>：确保包含选择区域的所有内容</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function openExtensions() {
+            window.open('chrome://extensions/', '_blank');
+        }
+        
+        function startTest() {
+            alert('准备测试拼接修复效果：\n\n' +
+                  '1. 重新加载ArcShot扩展\n' +
+                  '2. 打开一个长页面\n' +
+                  '3. 勾选"智能滚动截图"\n' +
+                  '4. 选择一个大区域\n' +
+                  '5. 观察拼接过程\n' +
+                  '6. 检查最终长图效果');
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ ArcShot 拼接功能修复测试页面已加载');
+            console.log('修复要点：添加 manual_scrolling_new 数据源检测逻辑');
+        });
+    </script>
+</body>
+</html>

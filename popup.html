@@ -1,21 +1,39 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArcShot</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="popup-container">
-    <h2>ArcShot</h2>
-    <button id="fullScreenBtn">全屏截图</button>
-    <button id="manualSelectBtn">手动选择</button>
-    <div class="checkbox-container">
-      <label for="scrollCheckbox">滚动截图</label>
-      <input type="checkbox" id="scrollCheckbox">
-    </div>
-    <div class="info-message">
-      选择滚动截图可以捕获整个网页内容
-    </div>
+    <header>
+      <h2>ArcShot</h2>
+    </header>
+    
+    <main>
+      <div class="screenshot-modes">
+        <button id="fullScreenBtn" class="btn btn-primary">
+          <span>捕获可见区域</span>
+        </button>
+        
+        <button id="manualSelectBtn" class="btn btn-secondary">
+          <span>手动选择区域</span>
+        </button>
+      </div>
+      
+      <div class="options-panel">
+        <div class="checkbox-group">
+          <input type="checkbox" id="scrollCheckbox" class="checkbox">
+          <label for="scrollCheckbox" class="checkbox-label">智能滚动截图</label>
+        </div>
+        
+        <div class="message message-info">
+          开启智能滚动可捕获完整页面内容
+        </div>
+      </div>
+    </main>
   </div>
   <script src="popup.js"></script>
 </body>

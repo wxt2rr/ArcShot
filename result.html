@@ -1,21 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArcShot - 截图预览</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="result-container">
-    <h2>截图结果</h2>
-    <img id="screenshotPreview" src="" alt="Screenshot Preview">
-    <div class="corner-radius-container">
-      <label for="cornerRadius">圆角半径 (像素):</label>
-      <input type="number" id="cornerRadius" min="0" max="50" value="0" placeholder="输入0-50之间的数值">
-    </div>
-    <button id="saveBtn">保存并下载</button>
-    <div class="info-message">
-      调整圆角数值可以实时预览效果，点击保存下载图片
-    </div>
+    <header>
+      <h2>截图预览</h2>
+    </header>
+    
+    <main>
+      <div class="preview-section">
+        <img id="screenshotPreview" src="" alt="Screenshot Preview">
+      </div>
+      
+      <div class="editing-panel">
+        <div class="form-group">
+          <label for="cornerRadius" class="form-label">圆角半径</label>
+          <input 
+            type="number" 
+            id="cornerRadius" 
+            class="form-input"
+            min="0" 
+            max="50" 
+            value="0" 
+            placeholder="0-50像素"
+          >
+        </div>
+        
+        <div class="actions">
+          <button id="saveBtn" class="btn btn-primary">
+            <span>保存并下载</span>
+          </button>
+        </div>
+        
+        <div class="message message-info">
+          调整圆角数值可实时预览效果
+        </div>
+      </div>
+    </main>
   </div>
   <script src="utils/imageUtils.js"></script>
   <script src="result.js"></script>

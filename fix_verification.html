@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcShot 错误修复验证</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .success { background: #d4edda; border-left: 4px solid #28a745; }
+        .error { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .warning { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .info { background: #d1ecf1; border-left: 4px solid #17a2b8; }
+        .btn {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover { background: #0056b3; }
+        .code {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 ArcShot 错误修复验证</h1>
+        
+        <div class="status success">
+            <h3>✅ storageData 变量作用域问题已修复</h3>
+            <p>已将 storageData 变量声明移至函数开头，确保在整个作用域内可访问。</p>
+        </div>
+
+        <div class="status info">
+            <h3>📋 重新加载扩展步骤</h3>
+            <ol>
+                <li>在Chrome中打开 <code>chrome://extensions/</code></li>
+                <li>找到 ArcShot 扩展</li>
+                <li>点击刷新按钮（圆形箭头图标）重新加载扩展</li>
+                <li>确保扩展处于启用状态</li>
+            </ol>
+        </div>
+
+        <div class="status warning">
+            <h3>⚠️ 如果仍然出错</h3>
+            <p>如果重新加载后仍然有错误，可能的原因：</p>
+            <ul>
+                <li><strong>浏览器缓存</strong>：尝试重启Chrome浏览器</li>
+                <li><strong>扩展权限</strong>：检查扩展是否有足够权限</li>
+                <li><strong>其他错误</strong>：查看具体的错误行号和信息</li>
+            </ul>
+        </div>
+
+        <div class="status info">
+            <h3>🧪 测试流程</h3>
+            <p>重新加载扩展后，请按以下步骤测试：</p>
+            <ol>
+                <li>打开一个有足够内容的网页（需要滚动）</li>
+                <li>点击ArcShot扩展图标</li>
+                <li><strong>勾选</strong>"智能滚动截图"选项</li>
+                <li>点击"手动选择区域"</li>
+                <li>拖拽选择一个区域</li>
+                <li>等待截图完成</li>
+            </ol>
+        </div>
+
+        <div class="status info">
+            <h3>🔍 具体修复内容</h3>
+            <div class="code">
+// 修复前的问题代码：
+if (isScrollingMode) {
+    const storageData = { ... };  // 仅在if块内可访问
+} else {
+    const storageData = { ... };  // 仅在else块内可访问
+}
+chrome.storage.local.set(storageData, ...);  // ❌ 错误：storageData未定义
+
+// 修复后的正确代码：
+let storageData = {};  // ✅ 在函数开头声明
+if (isScrollingMode) {
+    storageData = { ... };  // 赋值而非重新声明
+} else {
+    storageData = { ... };  // 赋值而非重新声明
+}
+chrome.storage.local.set(storageData, ...);  // ✅ 正确：变量在作用域内
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <button class="btn" onclick="openExtensionsPage()">🔄 打开扩展管理页面</button>
+            <button class="btn" onclick="window.close()">✅ 我已完成重新加载</button>
+        </div>
+    </div>
+
+    <script>
+        function openExtensionsPage() {
+            window.open('chrome://extensions/', '_blank');
+        }
+        
+        // 页面加载完成后的提示
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ ArcShot 错误修复验证页面已加载');
+            console.log('请按照页面说明重新加载扩展后测试手动+滚动截图功能');
+        });
+    </script>
+</body>
+</html>

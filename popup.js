@@ -20,18 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 显示消息函数
   function showMessage(message, type = 'info') {
-    // 移除已存在的消息
-    const existingMessage = document.querySelector('.message');
+    // 移除已存在的动态消息
+    const existingMessage = document.querySelector('.dynamic-message');
     if (existingMessage) {
       existingMessage.remove();
     }
 
     const messageDiv = document.createElement('div');
-    messageDiv.className = `${type}-message message`;
+    messageDiv.className = `message message-${type} dynamic-message`;
     messageDiv.textContent = message;
     
-    const container = document.querySelector('.popup-container');
-    container.appendChild(messageDiv);
+    // 插入到options-panel的末尾
+    const optionsPanel = document.querySelector('.options-panel');
+    if (optionsPanel) {
+      optionsPanel.appendChild(messageDiv);
+    } else {
+      // 如果找不到options-panel，插入到container末尾
+      const container = document.querySelector('.popup-container');
+      if (container) {
+        container.appendChild(messageDiv);
+      }
+    }
     
     // 3秒后自动移除消息
     setTimeout(() => {
@@ -106,19 +115,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 设置按钮加载状态
   function setButtonLoading(button, loading, originalText) {
+    const buttonSpan = button.querySelector('span');
+    const textElement = buttonSpan || button;
+    
     if (loading) {
       button.disabled = true;
       button.classList.add('loading');
-      button.setAttribute('data-original-text', button.textContent);
+      button.setAttribute('data-original-text', textElement.textContent);
+      textElement.textContent = '加载中...';
     } else {
       button.disabled = false;
       button.classList.remove('loading');
       const original = button.getAttribute('data-original-text');
       if (original) {
-        button.textContent = original;
+        textElement.textContent = original;
         button.removeAttribute('data-original-text');
       } else {
-        button.textContent = originalText;
+        textElement.textContent = originalText;
       }
     }
   }
@@ -275,7 +288,10 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('函数调用时间:', new Date().toISOString());
     
     setButtonLoading(fullScreenBtn, true);
-    fullScreenBtn.textContent = '正在滚动截图...';
+    const buttonSpan = fullScreenBtn.querySelector('span');
+    if (buttonSpan) {
+      buttonSpan.textContent = '正在滚动截图...';
+    }
     
     try {
       console.log('📱 开始获取当前标签页信息...');
@@ -492,7 +508,10 @@ document.addEventListener('DOMContentLoaded', () => {
           successfulSteps++;
           
           // 更新按钮文本显示进度
-          fullScreenBtn.textContent = `正在截图 ${step + 1}/${totalSteps}...`;
+          const buttonSpan = fullScreenBtn.querySelector('span');
+          if (buttonSpan) {
+            buttonSpan.textContent = `正在截图 ${step + 1}/${totalSteps}...`;
+          }
           
         } catch (stepError) {
           console.error(`❌ 步骤 ${step + 1} 失败:`, stepError);
@@ -524,7 +543,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       console.log(`🔧 开始拼接 ${screenshots.length} 张图片...`);
-      fullScreenBtn.textContent = '正在拼接图片...';
+      const buttonSpan = fullScreenBtn.querySelector('span');
+      if (buttonSpan) {
+        buttonSpan.textContent = '正在拼接图片...';
+      }
 
       // 拼接图像 - 使用与滚动步长对应的重叠计算
       const overlap = Math.floor(actualViewportHeight * 0.15); // 15% overlap，与滚动步长一致
@@ -648,7 +670,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 手动选择区域截图
   async function captureManualSelection() {
     setButtonLoading(manualSelectBtn, true);
-    manualSelectBtn.textContent = '启动区域选择...';
+    const buttonSpan = manualSelectBtn.querySelector('span');
+    if (buttonSpan) {
+      buttonSpan.textContent = '启动区域选择...';
+    }
     
     try {
       // 获取当前标签页
@@ -706,7 +731,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 滚动截图手动选择功能
   async function captureScrollingManualSelection() {
     setButtonLoading(manualSelectBtn, true);
-    manualSelectBtn.textContent = '启动滚动区域选择...';
+    const buttonSpan = manualSelectBtn.querySelector('span');
+    if (buttonSpan) {
+      buttonSpan.textContent = '启动滚动区域选择...';
+    }
 
     try {
       // 获取当前标签页

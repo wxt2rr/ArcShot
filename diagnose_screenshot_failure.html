@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcShot 截图失败诊断</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid;
+        }
+        .success { background: #d4edda; border-left-color: #28a745; }
+        .error { background: #f8d7da; border-left-color: #dc3545; }
+        .warning { background: #fff3cd; border-left-color: #ffc107; }
+        .info { background: #d1ecf1; border-left-color: #17a2b8; }
+        .btn {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn:hover { background: #0056b3; }
+        .btn-danger {
+            background: #dc3545;
+        }
+        .btn-danger:hover { background: #c82333; }
+        .code {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-output {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🩺 ArcShot 截图失败专项诊断</h1>
+        
+        <div class="status error">
+            <h3>🚨 当前问题</h3>
+            <p><strong>滚动截图失败：没有成功截取任何图片</strong></p>
+            <p>错误位置：background.js:498</p>
+            <p>错误描述：所有滚动截图步骤都失败，导致screenshots数组为空</p>
+        </div>
+
+        <div class="status info">
+            <h3>🔬 可能原因分析</h3>
+            <ul>
+                <li><strong>权限问题</strong>：扩展没有截图权限或权限被撤销</li>
+                <li><strong>标签页问题</strong>：目标标签页不存在或不可访问</li>
+                <li><strong>频率限制</strong>：Chrome限制截图API调用频率</li>
+                <li><strong>窗口状态</strong>：目标窗口最小化或被遮挡</li>
+                <li><strong>页面状态</strong>：页面未完全加载或content script未注入</li>
+            </ul>
+        </div>
+
+        <div style="text-align: center; margin: 20px 0;">
+            <button class="btn" onclick="runBasicDiagnosis()">🔍 基础诊断</button>
+            <button class="btn" onclick="testScreenshotAPI()">📷 测试截图API</button>
+            <button class="btn" onclick="checkTabStatus()">📄 检查标签页状态</button>
+            <button class="btn btn-danger" onclick="clearAllData()">🧹 清除所有数据</button>
+        </div>
+
+        <div id="diagnosisOutput"></div>
+
+        <div class="status warning">
+            <h3>🛠️ 修复建议</h3>
+            <ol>
+                <li><strong>重新加载扩展</strong>：到 chrome://extensions/ 重新加载ArcShot</li>
+                <li><strong>检查权限</strong>：确保扩展有"访问您在所有网站上的数据"权限</li>
+                <li><strong>重启浏览器</strong>：关闭Chrome后重新打开</li>
+                <li><strong>测试简单页面</strong>：在简单的网页（如about:blank）上测试</li>
+                <li><strong>检查窗口状态</strong>：确保目标窗口处于前台且可见</li>
+            </ol>
+        </div>
+
+        <div class="status info">
+            <h3>📝 手动测试步骤</h3>
+            <ol>
+                <li>确保当前窗口有其他普通网页标签页</li>
+                <li>点击下方的"测试截图API"按钮</li>
+                <li>如果基础截图失败，说明是权限或环境问题</li>
+                <li>如果基础截图成功，则是滚动截图逻辑问题</li>
+                <li>根据测试结果采取相应的修复措施</li>
+            </ol>
+        </div>
+
+        <div id="logOutput" class="log-output" style="display: none;">
+            <div id="logContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let logElement;
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('logContent');
+            if (!logDiv) return;
+            
+            const color = type === 'error' ? '#ff4444' : 
+                         type === 'warning' ? '#ffaa00' : 
+                         type === 'success' ? '#00ff00' : '#00aaff';
+            
+            logDiv.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            
+            document.getElementById('logOutput').style.display = 'block';
+        }
+
+        // 基础诊断
+        async function runBasicDiagnosis() {
+            document.getElementById('diagnosisOutput').innerHTML = '<div class="status info"><h3>🔍 正在运行基础诊断...</h3></div>';
+            addLog('开始基础诊断');
+            
+            const results = [];
+            
+            // 1. 检查扩展权限
+            try {
+                addLog('检查扩展权限...');
+                const hasPermissions = await new Promise((resolve) => {
+                    chrome.permissions.contains({
+                        permissions: ['tabs', 'storage'],
+                        origins: ['<all_urls>']
+                    }, resolve);
+                });
+                
+                if (hasPermissions) {
+                    results.push({ type: 'success', title: '✅ 扩展权限正常', message: '所有必需权限已授权' });
+                    addLog('扩展权限检查通过', 'success');
+                } else {
+                    results.push({ type: 'error', title: '❌ 扩展权限不足', message: '缺少必要权限，这是截图失败的主要原因' });
+                    addLog('扩展权限不足 - 这是主要问题！', 'error');
+                }
+            } catch (error) {
+                results.push({ type: 'error', title: '❌ 权限检查失败', message: error.message });
+                addLog(`权限检查失败: ${error.message}`, 'error');
+            }
+
+            // 2. 检查当前标签页状态
+            try {
+                addLog('检查标签页状态...');
+                const tabs = await new Promise((resolve) => {
+                    chrome.tabs.query({ currentWindow: true }, resolve);
+                });
+                
+                const currentTab = tabs.find(tab => tab.active);
+                const validTabs = tabs.filter(tab => 
+                    !tab.url.startsWith('chrome-extension://') && 
+                    !tab.url.startsWith('chrome://') &&
+                    tab.url !== 'about:blank'
+                );
+                
+                if (validTabs.length > 0) {
+                    results.push({ type: 'success', title: '✅ 标签页状态良好', message: `找到${validTabs.length}个可用标签页` });
+                    addLog(`找到${validTabs.length}个可用标签页`, 'success');
+                } else {
+                    results.push({ type: 'error', title: '❌ 没有可用标签页', message: '没有找到可截图的普通网页' });
+                    addLog('没有找到可用标签页', 'error');
+                }
+
+                // 检查当前标签页状态
+                if (currentTab) {
+                    addLog(`当前标签页: ${currentTab.title} (${currentTab.url})`, 'info');
+                    addLog(`标签页状态: active=${currentTab.active}, status=${currentTab.status}`, 'info');
+                }
+            } catch (error) {
+                results.push({ type: 'error', title: '❌ 标签页检查失败', message: error.message });
+                addLog(`标签页检查失败: ${error.message}`, 'error');
+            }
+
+            // 3. 检查存储状态
+            try {
+                addLog('检查存储状态...');
+                const storageData = await new Promise((resolve) => {
+                    chrome.storage.local.get(null, resolve);
+                });
+                
+                const keys = Object.keys(storageData);
+                if (keys.length > 0) {
+                    results.push({ type: 'warning', title: '⚠️ 存储数据残留', message: `发现${keys.length}项数据，可能需要清理` });
+                    addLog(`发现${keys.length}项存储数据`, 'warning');
+                } else {
+                    results.push({ type: 'success', title: '✅ 存储状态干净', message: '无残留数据' });
+                    addLog('存储状态干净', 'success');
+                }
+            } catch (error) {
+                results.push({ type: 'error', title: '❌ 存储检查失败', message: error.message });
+                addLog(`存储检查失败: ${error.message}`, 'error');
+            }
+
+            displayResults(results);
+            addLog('基础诊断完成');
+        }
+
+        // 测试截图API
+        async function testScreenshotAPI() {
+            addLog('开始测试截图API...');
+            
+            try {
+                // 测试基础截图功能
+                addLog('调用 chrome.tabs.captureVisibleTab...');
+                const dataUrl = await new Promise((resolve, reject) => {
+                    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(dataUrl);
+                        }
+                    });
+                });
+                
+                addLog(`截图成功！数据长度: ${dataUrl.length} 字符`, 'success');
+                document.getElementById('diagnosisOutput').innerHTML = `
+                    <div class="status success">
+                        <h3>✅ 截图API测试成功</h3>
+                        <p>基础截图功能正常，数据长度: ${dataUrl.length} 字符</p>
+                        <p>这说明权限和环境都正常，问题可能在滚动截图的具体逻辑中。</p>
+                    </div>
+                `;
+                
+            } catch (error) {
+                addLog(`截图API测试失败: ${error.message}`, 'error');
+                document.getElementById('diagnosisOutput').innerHTML = `
+                    <div class="status error">
+                        <h3>❌ 截图API测试失败</h3>
+                        <p>错误信息: ${error.message}</p>
+                        <p><strong>这是核心问题！</strong>需要先解决基础截图权限问题。</p>
+                        <h4>建议解决方案:</h4>
+                        <ul>
+                            <li>重新加载ArcShot扩展</li>
+                            <li>检查扩展权限设置</li>
+                            <li>重启Chrome浏览器</li>
+                            <li>确保目标窗口处于前台</li>
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        // 检查标签页状态
+        async function checkTabStatus() {
+            addLog('检查详细标签页状态...');
+            
+            try {
+                const tabs = await new Promise((resolve) => {
+                    chrome.tabs.query({ currentWindow: true }, resolve);
+                });
+                
+                addLog(`当前窗口共有 ${tabs.length} 个标签页`);
+                
+                let html = `
+                    <div class="status info">
+                        <h3>📄 标签页详细状态</h3>
+                        <p>当前窗口共有 ${tabs.length} 个标签页：</p>
+                        <div class="code">
+                `;
+                
+                tabs.forEach((tab, index) => {
+                    const isActive = tab.active ? ' (当前活动)' : '';
+                    const isValid = !tab.url.startsWith('chrome-extension://') && 
+                                   !tab.url.startsWith('chrome://') &&
+                                   tab.url !== 'about:blank';
+                    
+                    html += `${index + 1}. ${tab.title}${isActive}\n`;
+                    html += `   URL: ${tab.url}\n`;
+                    html += `   状态: ${tab.status}\n`;
+                    html += `   可截图: ${isValid ? '是' : '否'}\n`;
+                    html += `   ID: ${tab.id}\n\n`;
+                    
+                    addLog(`标签页${index + 1}: ${tab.title} - ${isValid ? '可截图' : '不可截图'}`);
+                });
+                
+                html += `</div></div>`;
+                document.getElementById('diagnosisOutput').innerHTML = html;
+                
+            } catch (error) {
+                addLog(`标签页状态检查失败: ${error.message}`, 'error');
+                document.getElementById('diagnosisOutput').innerHTML = `
+                    <div class="status error">
+                        <h3>❌ 标签页状态检查失败</h3>
+                        <p>错误信息: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 清除所有数据
+        function clearAllData() {
+            if (!confirm('确定要清除所有ArcShot数据吗？这将删除所有截图缓存。')) {
+                return;
+            }
+            
+            addLog('开始清除所有数据...');
+            chrome.storage.local.clear(() => {
+                if (chrome.runtime.lastError) {
+                    addLog(`清除失败: ${chrome.runtime.lastError.message}`, 'error');
+                    alert('清除失败: ' + chrome.runtime.lastError.message);
+                } else {
+                    addLog('所有数据已清除', 'success');
+                    alert('✅ 所有数据已清除！建议重新加载扩展后重试。');
+                    document.getElementById('diagnosisOutput').innerHTML = `
+                        <div class="status success">
+                            <h3>✅ 数据清除成功</h3>
+                            <p>所有ArcShot数据已清除，建议：</p>
+                            <ol>
+                                <li>重新加载ArcShot扩展</li>
+                                <li>重新测试手动+滚动截图功能</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+            });
+        }
+
+        // 显示诊断结果
+        function displayResults(results) {
+            let html = '<h3>🔍 诊断结果</h3>';
+            
+            results.forEach(result => {
+                html += `
+                    <div class="status ${result.type}">
+                        <h4>${result.title}</h4>
+                        <p>${result.message}</p>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('diagnosisOutput').innerHTML = html;
+        }
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', () => {
+            addLog('ArcShot 截图失败诊断工具已加载', 'info');
+            console.log('🩺 ArcShot 截图失败诊断工具已启动');
+        });
+    </script>
+</body>
+</html>

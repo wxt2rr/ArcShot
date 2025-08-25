@@ -48,16 +48,16 @@ function cropImage(imageDataUrl, selection) {
         canvas.width = selection.width;
         canvas.height = selection.height;
         
-        // Calculate the device pixel ratio to handle high-DPI displays
-        const devicePixelRatio = window.devicePixelRatio || 1;
+        // Chrome扩展的captureVisibleTab已经返回正确的像素尺寸
+        // 不需要再乘以devicePixelRatio，直接使用selection坐标
         
         // Draw the cropped portion of the image
         ctx.drawImage(
           img,
-          selection.x * devicePixelRatio,
-          selection.y * devicePixelRatio,
-          selection.width * devicePixelRatio,
-          selection.height * devicePixelRatio,
+          selection.x,
+          selection.y,
+          selection.width,
+          selection.height,
           0,
           0,
           selection.width,

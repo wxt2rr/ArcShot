@@ -83,96 +83,78 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
     
     // 🔧 修复：增加延迟确保UI完全清理
     console.log('⏰ 等待UI完全清理...');
-    await new Promise(resolve => setTimeout(resolve, 300)); // 增加到300ms确保UI清理
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     let dataUrl;
     let scrollingData = null;
+    let storageData = {}; // 🔧 修复：将storageData声明移到函数开头，确保在整个函数作用域内可访问
     
     if (isScrollingMode) {
-      console.log('🔄 执行滚动截图模式...');
-      // 滚动模式：先进行滚动截图获取完整页面
-      const scrollingResult = await performScrollingScreenshotInBackground(tabId);
+      console.log('🔄 执行手动+滚动截图模式...');
+      // 🔧 新增：传递选择区域信息给滚动截图函数
+      const scrollingResult = await performScrollingScreenshotInBackground(tabId, selection);
       dataUrl = scrollingResult.dataUrl;
       scrollingData = scrollingResult;
-      console.log('✅ 滚动截图完成，准备裁剪选择区域');
+      console.log('✅ 手动+滚动截图完成，准备处理结果');
       
-      // 检查是否成功获取到拼接图片
+      // 检查是否成功获取到截图数据
       if (!dataUrl) {
-        throw new Error('滚动截图拼接失败，无法获取完整页面图片');
+        throw new Error('手动+滚动截图失败，无法获取截图数据');
       }
+      
+      // 存储滚动截图数据
+      storageData = {
+        needsStitching: scrollingData.needsStitching,
+        pendingStitchImages: scrollingData.pendingStitchImages,
+        pendingStitchOverlap: scrollingData.pendingStitchOverlap,
+        screenshotDataUrl: dataUrl,
+        processingTimestamp: Date.now(),
+        scrollingMetadata: scrollingData.scrollingMetadata,
+        // 🔧 新增：保存选择区域信息用于后续宽度裁剪
+        needsCropping: scrollingData.scrollingMetadata?.needsWidthCropping || false,
+        selectionArea: selection,
+        captureType: 'manual-scrolling'
+      };
+      
+      console.log('💾 [DEBUG] 存储手动+滚动截图数据, storageData type:', typeof storageData, storageData);
+      
     } else {
       console.log('📷 执行普通截图模式...');
       // 普通模式：截取当前可见区域
       console.log('Capturing visible tab...');
       dataUrl = await new Promise((resolve, reject) => {
         // 🔧 关键修复：captureVisibleTab的第一个参数是windowId，不是tabId
-        // 使用null表示当前窗口
-        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (capturedDataUrl) => {
           if (chrome.runtime.lastError) {
-            console.error('Capture error:', chrome.runtime.lastError);
             reject(new Error('截图失败: ' + chrome.runtime.lastError.message));
           } else {
-            console.log('Screenshot captured successfully, data URL length:', dataUrl ? dataUrl.length : 'undefined');
-            resolve(dataUrl);
+            resolve(capturedDataUrl);
           }
         });
       });
-    }
-    
-    if (!dataUrl) {
-      throw new Error('截图数据为空');
-    }
-    
-    // 🔧 修复：一次性存储所有必要数据，避免竞态条件
-    console.log('Storing screenshot data...');
-    
-    await new Promise((resolve, reject) => {
-      const storageData = {
-        screenshotDataUrl: dataUrl, // 始终存储完整的截图数据（普通截图或拼接后的完整页面）
-        selectionArea: selection,
+      
+      console.log('✅ 普通截图完成');
+      
+      // 存储普通截图数据
+      storageData = {
+        screenshotDataUrl: dataUrl,
+        captureType: 'manual-simple',
+        captureTime: Date.now(),
         needsCropping: true,
-        isScrollingMode: isScrollingMode,
-        processingTimestamp: Date.now()
+        selectionArea: selection
       };
       
-      // 🔧 关键修复：滚动模式只存储元数据，避免配额超限
-      if (isScrollingMode && scrollingData) {
-        console.log('📦 滚动模式：存储元数据，避免大图片数据');
-        storageData.needsStitching = true; // 强制为true
-        
-        // 🚨 关键修复：不存储图片数据，只存储重新生成所需的元数据
-        storageData.scrollingMetadata = {
-          actualScrollHeight: scrollingData.scrollingMetadata?.actualScrollHeight,
-          actualViewportHeight: scrollingData.scrollingMetadata?.actualViewportHeight,
-          scrollableContent: scrollingData.scrollingMetadata?.scrollableContent,
-          totalSteps: scrollingData.scrollingMetadata?.totalSteps,
-          scrollStep: scrollingData.scrollingMetadata?.scrollStep,
-          tabId: tabId, // 保存tabId以便重新截图
-          needsRegenerate: true // 标记需要重新生成
-        };
-        
-        console.log('📊 存储的元数据:');
-        console.log('   - 总步数:', storageData.scrollingMetadata.totalSteps);
-        console.log('   - 每步滚动:', storageData.scrollingMetadata.scrollStep);
-        console.log('   - 需要重新生成: true');
-        console.log('   - 不存储图片数据，避免配额超限');
-      }
-      
-      console.log('💾 存储数据:', {
-        dataUrlLength: dataUrl ? dataUrl.length : 0,
-        selectionArea: storageData.selectionArea,
-        needsCropping: storageData.needsCropping,
-        isScrollingMode: storageData.isScrollingMode,
-        needsStitching: storageData.needsStitching,
-        hasScrollingMetadata: !!storageData.scrollingMetadata
-      });
-      
+      console.log('💾 [DEBUG] 存储普通截图数据, storageData type:', typeof storageData, storageData);
+    }
+    
+    // 存储数据并打开结果页面
+    await new Promise((resolve, reject) => {
       chrome.storage.local.set(storageData, () => {
         if (chrome.runtime.lastError) {
-          console.error('Storage error:', chrome.runtime.lastError);
-          reject(new Error('保存截图失败: ' + chrome.runtime.lastError.message));
+          console.error('存储失败:', chrome.runtime.lastError);
+          reject(new Error('存储数据失败: ' + chrome.runtime.lastError.message));
         } else {
-          console.log('✅ 截图数据存储成功');
+          console.log('✅ 数据存储成功');
           resolve();
         }
       });
@@ -193,7 +175,6 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
     });
     
     console.log('=== Area selection processing completed successfully ===');
-    
   } catch (error) {
     console.error('=== Error processing area selection ===');
     console.error('Error details:', error);
@@ -222,8 +203,8 @@ async function handleAreaSelection(selection, tabId, isScrollingMode = false) {
 }
 
 // 在background中实现滚动截图逻辑
-async function performScrollingScreenshotInBackground(tabId) {
-  console.log('📸 === performScrollingScreenshotInBackground 开始执行 ===');
+async function performScrollingScreenshotInBackground(tabId, selection = null) {
+  console.log('📸 === performScrollingScreenshotInBackground 开始执行 ===', { tabId, selection });
   
   try {
     // 🔧 新增：权限预检查
@@ -267,6 +248,9 @@ async function performScrollingScreenshotInBackground(tabId) {
     console.log('📏 可滚动内容高度:', scrollableContent);
     console.log('📏 页面是否可滚动:', isScrollable);
     console.log('📏 最大滚动距离:', maxScrollTop);
+    if (selection) {
+      console.log('🎯 选择区域信息:', selection);
+    }
     
     // 更宽松的滚动判断条件：如果可滚动内容超过50px就进行滚动截图
     if (scrollableContent <= 50) {
@@ -293,20 +277,127 @@ async function performScrollingScreenshotInBackground(tabId) {
     }
 
     console.log('🎉 页面需要滚动截图！');
-    console.log(`📏 页面需要滚动截图: 总高度=${actualScrollHeight}px, 可见高度=${actualViewportHeight}px, 可滚动=${scrollableContent}px`);
-
-    const screenshots = [];
-    // 与popup.js保持完全一致的重叠计算
-    const scrollStep = Math.floor(actualViewportHeight * 0.85); // 15% overlap，与popup.js一致
-    const calculatedOverlap = Math.floor(actualViewportHeight * 0.15); // 15% overlap，与popup.js一致
-    const totalSteps = Math.ceil(scrollableContent / scrollStep) + 1;
+    
+    let scrollStep, calculatedOverlap, totalSteps;
+    let useOptimizedScrolling = false;
+    let scrollingMetadata = {
+      actualScrollHeight,
+      actualViewportHeight,
+      scrollableContent
+    };
+    
+    // 🔧 新增：支持基于选择区域的优化滚动
+    if (selection && selection.width && selection.height) {
+      console.log('🎯 使用基于选择区域的优化滚动策略');
+      
+      // 简单优化：基于选择区域高度计算步长
+      console.log('🔧 使用简单优化方案');
+      
+      // 基于选择区域高度而非视口高度
+      const baseHeight = selection.height;
+      const stepRatio = 0.85; // 不使用魔法数字
+      const overlapRatio = 0.15;
+      
+      scrollStep = Math.floor(baseHeight * stepRatio);
+      calculatedOverlap = Math.floor(baseHeight * overlapRatio);
+      
+      // 🔧 修复关键问题：扩大滚动范围以确保覆盖选择区域的完整内容
+      // 不再限制在选择区域范围内，而是基于整个页面的可滚动内容
+      console.log('🔧 计算扩展滚动范围以确保完整覆盖...');
+      
+      // 确保滚动能够覆盖选择区域的所有内容
+      const selectionBottom = selection.y + selection.height;
+      const pageBottom = actualScrollHeight;
+      
+      // 计算需要滚动的总距离：从页面顶部到选择区域底部，再加上一些缓冲
+      const bufferSize = Math.floor(actualViewportHeight * 0.2); // 20% 缓冲
+      const totalScrollRange = Math.min(scrollableContent, selectionBottom + bufferSize);
+      
+      // 使用较小的步长确保更好的覆盖
+      const adjustedScrollStep = Math.min(scrollStep, Math.floor(actualViewportHeight * 0.7));
+      totalSteps = Math.ceil(totalScrollRange / adjustedScrollStep) + 1;
+      
+      // 确保至少有合理的步数
+      if (totalSteps < 3) {
+        totalSteps = Math.max(3, Math.ceil(scrollableContent / adjustedScrollStep));
+      }
+      
+      scrollStep = adjustedScrollStep;
+      useOptimizedScrolling = true;
+      
+      // 更新元数据
+      scrollingMetadata = {
+        ...scrollingMetadata,
+        totalSteps,
+        scrollStep,
+        selectionArea: selection,
+        useOptimizedScrolling: true,
+        needsWidthCropping: true,
+        scrollRange: { 
+          totalScrollRange, 
+          selectionBottom, 
+          bufferSize,
+          adjustedScrollStep
+        },
+        strategy: 'selection_optimized'
+      };
+      
+      console.log('🔧 选择区域优化结果:');
+      console.log(`   - 选择区域高度: ${selection.height}px`);
+      console.log(`   - 选择区域底部: ${selectionBottom}px`);
+      console.log(`   - 总滚动范围: ${totalScrollRange}px`);
+      console.log(`   - 调整后步长: ${scrollStep}px`);
+      console.log(`   - 总步数: ${totalSteps}`);
+      console.log(`   - 页面可滚动内容: ${scrollableContent}px`);
+      
+    } else {
+      // 默认逻辑：使用视口高度计算
+      console.log('📋 使用传统滚动策略（基于视口高度）');
+      const stepRatio = 0.85;
+      const overlapRatio = 0.15;
+      
+      scrollStep = Math.floor(actualViewportHeight * stepRatio);
+      calculatedOverlap = Math.floor(actualViewportHeight * overlapRatio);
+      totalSteps = Math.ceil(scrollableContent / scrollStep) + 1;
+      
+      scrollingMetadata = {
+        ...scrollingMetadata,
+        totalSteps,
+        scrollStep,
+        useOptimizedScrolling: false,
+        strategy: 'traditional'
+      };
+    }
+    
+    // 🔧 关键修复：确保变量都被正确初始化
+    if (!totalSteps || totalSteps <= 0) {
+      console.error('❤️ 关键错误：totalSteps 未正确初始化！');
+      console.error('  - totalSteps:', totalSteps);
+      console.error('  - scrollStep:', scrollStep);
+      console.error('  - calculatedOverlap:', calculatedOverlap);
+      console.error('  - scrollableContent:', scrollableContent);
+      console.error('  - actualViewportHeight:', actualViewportHeight);
+      throw new Error(`滚动截图参数计算错误：totalSteps=${totalSteps}, scrollStep=${scrollStep}`);
+    }
+    
+    if (!scrollStep || scrollStep <= 0) {
+      console.error('❤️ 关键错误：scrollStep 未正确初始化！');
+      console.error('  - scrollStep:', scrollStep);
+      console.error('  - totalSteps:', totalSteps);
+      throw new Error(`滚动步长计算错误：scrollStep=${scrollStep}`);
+    }
     
     console.log(`📋 滚动截图计划:`);
     console.log(`   - 总步数: ${totalSteps}`);
     console.log(`   - 每步滚动: ${scrollStep}px`);
     console.log(`   - 重叠区域: ${calculatedOverlap}px`);
-    console.log(`   - 重叠比例: 15% (与popup.js一致)`);
-    console.log(`   - 步长比例: 85% (与popup.js一致)`);
+    console.log(`   - 优化模式: ${useOptimizedScrolling ? '开启' : '关闭'}`);
+    console.log(`   - 策略: ${scrollingMetadata.strategy}`);
+    if (selection) {
+      console.log(`   - 需要宽度裁剪: ${scrollingMetadata.needsWidthCropping ? '是' : '否'}`);
+    }
+
+    const screenshots = [];
 
     console.log('🔄 重置滚动位置到顶部...');
     // 重置滚动位置到顶部
@@ -318,6 +409,7 @@ async function performScrollingScreenshotInBackground(tabId) {
     });
 
     let successfulSteps = 0;
+    let failedSteps = 0; // 🔧 新增：跟踪失败步数
     console.log('🎬 开始逐步滚动截图...');
     
     // 逐步滚动并截图
@@ -363,6 +455,7 @@ async function performScrollingScreenshotInBackground(tabId) {
         
       } catch (stepError) {
         console.error(`❌ 步骤 ${step + 1} 失败:`, stepError);
+        failedSteps++; // 🔧 新增：增加失败计数
         
         // 如果是频率限制错误，增加更长延迟后重试
         if (stepError.message.includes('MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND')) {
@@ -373,6 +466,7 @@ async function performScrollingScreenshotInBackground(tabId) {
             const retryDataUrl = await captureWithRetry(step + 1, 1, tabId);
             screenshots.push(retryDataUrl);
             successfulSteps++;
+            failedSteps--; // 重试成功，减少失败计数
             continue;
           } catch (retryError) {
             console.error(`❌ 重试仍失败:`, retryError);
@@ -391,7 +485,17 @@ async function performScrollingScreenshotInBackground(tabId) {
 
     // 检查是否有足够的截图
     if (screenshots.length === 0) {
-      throw new Error('没有成功截取任何图片');
+      const errorMsg = `滚动截图失败：没有成功截取任何图片。总步数：${totalSteps}，成功步数：${successfulSteps}，失败步数：${failedSteps}`;
+      console.error('❌ 详细错误信息:');
+      console.error('  - 总步数:', totalSteps);
+      console.error('  - 成功步数:', successfulSteps);
+      console.error('  - 失败步数:', failedSteps);
+      console.error('  - 滚动步长:', scrollStep);
+      console.error('  - 视口高度:', actualViewportHeight);
+      console.error('  - 可滚动内容:', scrollableContent);
+      console.error('  - 选择区域:', selection ? `${selection.width}x${selection.height}` : 'null');
+      console.error('  - 优化滚动:', useOptimizedScrolling);
+      throw new Error(errorMsg);
     }
     
     console.log(`📊 截图统计:`);
@@ -414,11 +518,10 @@ async function performScrollingScreenshotInBackground(tabId) {
       pendingStitchImages: screenshots,
       pendingStitchOverlap: calculatedOverlap,
       scrollingMetadata: {
-        actualScrollHeight,
-        actualViewportHeight,
-        scrollableContent,
+        ...scrollingMetadata,
         totalSteps: screenshots.length,
-        scrollStep
+        actualCapturedSteps: screenshots.length,
+        tabId // 🔧 新增：保存tabId以便后续使用
       }
     };
     
